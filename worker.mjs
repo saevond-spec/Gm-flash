@@ -78,6 +78,20 @@ export function autonomousAmountAllowed(cents){
  return Number.isSafeInteger(cents)&&cents>=AUTONOMOUS_BID_POLICY.min_bid_cents&&cents<=AUTONOMOUS_BID_POLICY.max_bid_cents;
 }
 // Conservative qualification. Unknown fields are not proof of escrow.
+export function postingFundingEvidence(task){
+ const norm=x=>typeof x==="string"?x.trim().toLowerCase():"";
+ const status=norm(task?.status),escrow=norm(task?.escrow_status),currency=norm(task?.currency);
+ const positive=x=>Number.isSafeInteger(x)&&x>0;
+ const excluded=task?.is_simulated===true||task?.simulated===true||task?.is_simulation===true||norm(task?.bounty_type)==="simulated"||task?.funded===false||task?.is_funded===false;
+ // These explicitly named fields are diagnostic probes, not a documented ClawHunt API contract.
+ const holds=[task?.posting_budget_held,task?.budget_held,task?.is_budget_held];
+ const amounts=[task?.posting_budget_cents,task?.budget_hold_cents,task?.held_budget_cents,task?.reserved_budget_cents].filter(positive);
+ const conflict=holds.includes(false)||new Set(amounts).size>1||(positive(task?.budget_cents)&&amounts.some(x=>x>task.budget_cents));
+ const preselection=["open","bidding"].includes(status);
+ const indication=preselection&&!excluded&&!conflict&&currency==="usd"&&holds.includes(true)&&amounts.length>0&&!["released","refunded","cancelled","failed","disputed","unfunded"].includes(escrow);
+ return {stage:escrow==="held"?"accepted_bid_escrow_reported":preselection?"preselection":"unknown_or_other",posting_hold_indicated:indication,posting_hold_amount_cents:indication?amounts[0]:null,posting_hold_contract_verified:false,automatic_bid_eligible_from_posting_hold:false};
+}
+
 export function qualifyTask(task, id, amountCents=null) {
   const norm=x=>typeof x==="string"?x.trim().toLowerCase():"";
   const statusRaw=norm(task?.status),escrowRaw=norm(task?.escrow_status);
@@ -94,7 +108,7 @@ export function qualifyTask(task, id, amountCents=null) {
   const budget=Number.isSafeInteger(task?.budget_cents)&&task.budget_cents>0?task.budget_cents:null;
   if(amountCents!==null && (budget===null || amountCents>budget))reasons.push(budget===null?"budget_cents_unverified":"bid_above_budget");
   return {problem_id:String(id),status:status||null,escrow_status:escrow||null,simulated_flag:simulated,budget_cents:budget,
-    funding_assessment:escrow==="held"&&!flags.includes(false)&&!simulated?"funding_indicated":"unverified_or_unfunded",
+    funding_assessment:escrow==="held"&&!flags.includes(false)&&!simulated?"funding_indicated":"unverified_or_unfunded",posting_funding:postingFundingEvidence(task),
     eligible:reasons.length===0,reasons,fee_assumption_percent:25,
     net_at_quoted_amount_cents:amountCents===null?null:Math.floor(amountCents*75/100),
     delivery_capability_verified:false};
@@ -107,7 +121,7 @@ export function safeMarketCategory(value){
 // Fixed schema-presence diagnostics; no upstream text, arbitrary field names or values are retained.
 export function fundingFieldShape(task){
  const out={};
- for(const k of ["budget_cents","budget","budget_usd","amount_cents","bounty","bounty_cents","reward","reward_cents","currency","escrow_status","escrow","funded","is_funded","funding_status","payment_status","posting_budget","posting_budget_cents","held_amount","held_amount_cents","escrow_amount","escrow_amount_cents","budget_hold","budget_held","is_budget_held"]){
+ for(const k of ["budget_cents","budget","budget_usd","amount_cents","bounty","bounty_cents","reward","reward_cents","currency","escrow_status","escrow","funded","is_funded","funding_status","payment_status","posting_budget","posting_budget_cents","held_amount","held_amount_cents","escrow_amount","escrow_amount_cents","budget_hold","budget_held","is_budget_held","posting_budget_held","budget_hold_cents","held_budget_cents","reserved_budget_cents","reserved_amount_cents","funding_type","is_simulated","bounty_type","price","price_cents","bounty_amount","bounty_amount_cents","min_budget","max_budget","min_budget_cents","max_budget_cents"]){
   if(!task||!Object.hasOwn(task,k))continue;
   const v=task[k];out[k]=v===null?"null":Array.isArray(v)?"array":typeof v;
  }
@@ -149,8 +163,9 @@ export function needsDetail(x){
 export async function runScheduledScan(env) {
  if(!env.BID_LEDGER)throw Error("Scan ledger unavailable");
  let outcome="unavailable", examined=0, candidates=[];
- const diagnostics={pages_requested:0,pages_with_new_ids:0,unique_records:0,duplicate_records:0,second_page_probe:"not_needed",rejections:{},listing_funding_field_shapes:{},detail_probes:[],public_discovery:[],scanner_revision:"detail-discovery-v3",complete_market_scan:false};
+ const diagnostics={pages_requested:0,pages_with_new_ids:0,unique_records:0,duplicate_records:0,second_page_probe:"not_needed",rejections:{},listing_funding_field_shapes:{},detail_probes:[],public_discovery:[],scanner_revision:"funding-stage-v4",complete_market_scan:false};
  const seen=new Set(), eligible=new Set(), ambiguous=[];
+ diagnostics.posting_hold_indications=0;
  const ingest=observation=>{
   examined+=observation.records_examined;
   for(const [key,types] of Object.entries(observation.funding_field_shapes??{})){const dst=diagnostics.listing_funding_field_shapes[key]??(diagnostics.listing_funding_field_shapes[key]={});for(const [type,n] of Object.entries(types))dst[type]=(dst[type]||0)+n;}
@@ -215,7 +230,8 @@ export async function runScheduledScan(env) {
     const task=data?.data?.problem??data?.problem??data?.data??data;
     const q=qualifyTask(task,id);
     const qualified=q.eligible&&autonomousAmountAllowed(q.budget_cents);
-    diagnostics.detail_probes.push({problem_id:id,field_shapes:fundingFieldShape(task),verified_budget_cents:q.budget_cents,escrow_status:q.escrow_status,status:q.status,qualified,reasons:q.reasons});
+    if(q.posting_funding.posting_hold_indicated)diagnostics.posting_hold_indications++;
+    diagnostics.detail_probes.push({problem_id:id,field_shapes:fundingFieldShape(task),posting_funding:q.posting_funding,verified_budget_cents:q.budget_cents,escrow_status:q.escrow_status,status:q.status,qualified,reasons:q.reasons});
     if(qualified)eligible.add(id);
    }catch{diagnostics.detail_probes.push({problem_id:id,unavailable:true})}
   }
