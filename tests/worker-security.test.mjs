@@ -145,3 +145,31 @@ test("model reasoning-only response fails closed without fake success",async()=>
   assert.equal(r.status,503);assert.equal(body.model_finish_reason,"length");
   assert.equal(body.draft,undefined);
 });
+
+
+test("visual probe uses downloaded PNG bytes as model input and returns model observation",async()=>{
+  const png=Uint8Array.from([137,80,78,71,13,10,26,10,...new Array(24).fill(0)]);
+  const url="https://clawhunt.store/api/v1/probe-files/test-image-v1.png";
+  const body=JSON.stringify({event_type:"capability_probe",probe_type:"visual_observation",probe_id:"visual-fixture",payload:{image_url:url}});
+  const env=fakeEnv();let called=0;
+  env.AI={run:async(model,args)=>{
+    called++;
+    assert.equal(model,"@cf/google/gemma-4-26b-a4b-it");
+    const image=args.messages[0].content.find(x=>x.type==="image_url");
+    assert.equal(image.image_url.url,"data:image/png;base64,"+Buffer.from(png).toString("base64"));
+    return {choices:[{message:{content:"An observation returned by the test double."}}]};
+  }};
+  globalThis.fetch=async(u,o)=>{assert.equal(String(u),url);assert.equal(o.redirect,"manual");return new Response(png)};
+  try{
+    const r=await worker.fetch(new Request(hook,{method:"POST",headers:headers(env.CPH_WEBHOOK_SECRET,body),body}),env);
+    const result=await r.json();assert.equal(result.status,"success");assert.equal(called,1);
+    assert.equal(result.result.description,"An observation returned by the test double.");
+  }finally{globalThis.fetch=savedFetch}
+});
+test("visual probe refuses arbitrary image URL",async()=>{
+  globalThis.fetch=async()=>{throw Error("unexpected network fetch")};
+  try{
+    const r=await hookCall({event_type:"capability_probe",probe_type:"visual_observation",probe_id:"blocked-image",payload:{image_url:"https://example.org/private.png"}});
+    assert.equal((await r.json()).status,"error");
+  }finally{globalThis.fetch=savedFetch}
+});
