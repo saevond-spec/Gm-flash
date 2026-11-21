@@ -21,13 +21,15 @@ export async function buildDataDelivery(body){
   const seen=new Set(),clean=[];
   for(const row of rows){
     if(!row||Object.getPrototypeOf(row)!==Object.prototype||Object.keys(row).some(k=>!columns.includes(k)))throw Error("Unknown columns or invalid row");
-    const values=columns.map(c=>{if(!Object.hasOwn(row,c))throw Error("Missing column "+c);return cell(row[c]);});
-    const key=JSON.stringify(values);
+    const raw=columns.map(c=>{if(!Object.hasOwn(row,c))throw Error("Missing column "+c);return row[c];});
+    const values=raw.map(cell);
+    // Deduplicate original typed scalar values, not their potentially colliding CSV encodings.
+    const key=JSON.stringify(raw);
     if(!seen.has(key)){seen.add(key);clean.push(values);}
   }
   const csv=[columns.map(quote).join(","),...clean.map(row=>row.map(quote).join(","))].join("\r\n")+"\r\n";
   const bytes=enc.encode(csv);
   if(bytes.length>131072)throw Error("Output exceeds 128 KiB");
   const sha256=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",bytes)),b=>b.toString(16).padStart(2,"0")).join("");
-  return {csv,manifest:{format:"CSV",source_kind:body.source_kind,source_claim_verified:false,rows_in:rows.length,rows_out:clean.length,duplicates_removed:rows.length-clean.length,columns,byte_size:bytes.length,sha256,formula_injection_escaped:true,marketplace_submission:false}};
+  return {csv,manifest:{format:"CSV",source_kind:body.source_kind,source_claim_verified:false,rows_in:rows.length,rows_out:clean.length,duplicates_removed:rows.length-clean.length,columns,byte_size:bytes.length,sha256,formula_injection_escaped:true,duplicate_semantics:"exact_original_scalar_values",csv_type_information_preserved:false,marketplace_submission:false}};
 }
