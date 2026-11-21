@@ -205,7 +205,7 @@ const PAGE = "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><meta nam
 
 // Only selected scalar metadata is retained. Page probes are read-only and must demonstrate new IDs.
 export function needsDetail(x){
- return ["open","bidding"].includes(x.status)&&!x.simulated_flag&&
+ return (x.status===null||["open","bidding"].includes(x.status))&&!x.simulated_flag&&
   !["released","refunded","cancelled","failed","disputed"].includes(x.escrow_status)&&
   !((x.budget_cents!==null)&&(!Number.isSafeInteger(x.budget_cents)||x.budget_cents<2000||x.budget_cents>10000000));
 }
