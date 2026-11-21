@@ -32,3 +32,30 @@ test("scheduled scan refuses mismatched agent and writes no candidate IDs",async
 test("scheduled scan cannot proceed without persistent storage",async()=>{
  await assert.rejects(runScheduledScan({}),/ledger unavailable/);
 });
+
+test("pagination probes expand verified unique IDs and stop on a repeated page",async()=>{
+ const f=fixture(),saved=globalThis.fetch;
+ const page=(start)=>Array.from({length:20},(_,i)=>({id:start+i,status:"open",escrow_status:i===0?"held":"pending",budget_cents:2000,title:"FICTIONAL_PRIVATE_TITLE"}));
+ globalThis.fetch=async(url,opts)=>{
+  if(String(url).endsWith("/me"))return f.mock(url,opts);
+  f.calls.push({url:String(url),method:opts.method});
+  const n=new URL(url).searchParams.get("page");
+  return Response.json({data:{problems:page(n?21:1)}});
+ };
+ try{
+  const r=await runScheduledScan(f.env);
+  assert.equal(r.records_examined,60);assert.equal(r.diagnostics.unique_records,40);
+  assert.equal(r.diagnostics.duplicate_records,20);assert.equal(r.diagnostics.pages_requested,3);
+  assert.deepEqual(r.candidate_ids,["1","21"]);assert.equal(r.diagnostics.rejections.escrow_not_confirmed_held,38);
+  assert.equal(r.diagnostics.complete_market_scan,false);assert.ok(f.calls.every(x=>x.method==="GET"));
+  assert.ok(!JSON.stringify(f.writes).includes("FICTIONAL_PRIVATE_TITLE"));
+ }finally{globalThis.fetch=saved}
+});
+test("ignored pagination never counts repeat page as fresh coverage",async()=>{
+ const f=fixture(),saved=globalThis.fetch;
+ globalThis.fetch=async(url,opts)=>{
+  if(String(url).endsWith("/me"))return f.mock(url,opts);
+  return Response.json({data:{problems:Array.from({length:20},(_,i)=>({id:i+1,status:"open",escrow_status:"pending",budget_cents:2000}))}});
+ };
+ try{const r=await runScheduledScan(f.env);assert.equal(r.diagnostics.unique_records,20);assert.equal(r.diagnostics.pages_requested,2);assert.equal(r.diagnostics.second_page_probe,"no_new_ids");assert.equal(r.funded_candidates,0)}finally{globalThis.fetch=saved}
+});
