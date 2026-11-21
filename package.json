@@ -6,7 +6,8 @@
   "scripts": {
     "deploy": "wrangler deploy",
     "test": "node --test tests/*.test.mjs",
-    "benchmark": "node benchmarks/public-live.mjs"
+    "benchmark": "node benchmarks/public-live.mjs",
+    "benchmark:research": "node benchmarks/research-live.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"
