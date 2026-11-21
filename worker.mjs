@@ -151,6 +151,20 @@ export function qualificationReview(task, assessment) {
  return "scope_and_readiness_review";
 }
 
+// Cross-source scalar evidence only. Listing prices never authorize bids by themselves.
+export function reconcileBudgetEvidence(task, id, listEvidence, detailBudget) {
+ const invalid={state:"unavailable",cents:null};
+ if(!task||String(task.id??task.problem_id??"")!==id||!["open","bidding"].includes(String(task.status??"").toLowerCase())||String(task.currency??"").toUpperCase()!=="USD")return invalid;
+ if(detailBudget.state==="invalid_explicit_budget"||detailBudget.state==="conflicting_budget"||detailBudget.state==="unsupported_currency")return {state:"detail_conflict",cents:null};
+ const matches=(listEvidence??[]).filter(x=>x.problem_id===id&&x.currency==="USD"&&["open","bidding"].includes(x.status)&&!x.simulated_flag);
+ if(matches.some(x=>["invalid_explicit_budget","conflicting_budget","unsupported_currency"].includes(x.budget_evidence_state)))return {state:"listing_conflict",cents:null};
+ const prices=new Set(matches.filter(x=>x.budget_evidence_state==="explicit_usd"&&Number.isSafeInteger(x.budget_cents)&&x.budget_cents>0).map(x=>x.budget_cents));
+ if(detailBudget.cents!==null){prices.add(detailBudget.cents);return prices.size===1?{state:"detail_explicit",cents:detailBudget.cents}:{state:"cross_source_conflict",cents:null};}
+ if(prices.size>1)return {state:"cross_source_conflict",cents:null};
+ if(prices.size===1)return {state:"listing_price_review",cents:[...prices][0]};
+ return invalid;
+}
+
 export function safeMarketCategory(value){
  const v=typeof value==="string"?value.trim().toLowerCase():"";
  return ["research","coding","automation","data","design","other","writing","translation","testing","development","marketing"].includes(v)?v:null;
@@ -179,7 +193,7 @@ export function marketObservation(payload, now=new Date().toISOString()){
   const title="Task #"+id;
   const category=safeMarketCategory(task.category);
   const reasons=[...q.reasons];if(q.budget_cents===null)reasons.push("budget_cents_unverified");
-  observations.push({problem_id:id,title,category,status:q.status,escrow_status:q.escrow_status,budget_cents:q.budget_cents,
+  observations.push({problem_id:id,title,category,status:q.status,escrow_status:q.escrow_status,budget_cents:q.budget_cents,budget_evidence_state:q.budget_evidence_state,currency:typeof task.currency==="string"&&task.currency.toUpperCase()==="USD"?"USD":null,simulated_flag:q.simulated_flag,
    settlement_at_posted_budget_cents:q.budget_cents===null?null:Math.floor(q.budget_cents*75/100),review_candidate:reasons.length===0,reasons,
    delivery_capability_verified:false,action:reasons.length===0?"review_detail_before_bidding":"hold_for_review"});
  }
@@ -198,13 +212,14 @@ export function needsDetail(x){
 export async function runScheduledScan(env) {
  if(!env.BID_LEDGER)throw Error("Scan ledger unavailable");
  let outcome="unavailable", examined=0, candidates=[];
- const diagnostics={pages_requested:0,pages_with_new_ids:0,unique_records:0,duplicate_records:0,second_page_probe:"not_needed",rejections:{},listing_funding_field_shapes:{},detail_probes:[],public_discovery:[],scanner_revision:"detail-discovery-v4-qualification",complete_market_scan:false};
- const seen=new Set(), eligible=new Set(), nonEscrow=new Set(), ambiguous=[], publicAmbiguous=[];
+ const diagnostics={pages_requested:0,pages_with_new_ids:0,unique_records:0,duplicate_records:0,second_page_probe:"not_needed",rejections:{},listing_funding_field_shapes:{},detail_probes:[],public_discovery:[],scanner_revision:"detail-discovery-v5-price-evidence",complete_market_scan:false};
+ const seen=new Set(), eligible=new Set(), nonEscrow=new Set(), ambiguous=[], publicAmbiguous=[], listingEvidence=new Map();
  const ingest=(observation,publicOnly=false)=>{
   examined+=observation.records_examined;
   for(const [key,types] of Object.entries(observation.funding_field_shapes??{})){const dst=diagnostics.listing_funding_field_shapes[key]??(diagnostics.listing_funding_field_shapes[key]={});for(const [type,n] of Object.entries(types))dst[type]=(dst[type]||0)+n;}
   let fresh=0;
   for(const x of observation.observations){
+   const evidence=listingEvidence.get(x.problem_id)??[];if(evidence.length<20)evidence.push({problem_id:x.problem_id,currency:x.currency,status:x.status,simulated_flag:x.simulated_flag,budget_evidence_state:x.budget_evidence_state,budget_cents:x.budget_cents});listingEvidence.set(x.problem_id,evidence);
    if(seen.has(x.problem_id)){diagnostics.duplicate_records++;continue}
    seen.add(x.problem_id);fresh++;
    const reasons=new Set(x.reasons);
@@ -263,10 +278,13 @@ export async function runScheduledScan(env) {
     const task=data?.data?.problem??data?.problem??data?.data??data;
     const q=qualifyTask(task,id);
     const optional=qualifyTask(task,id,null,true);
-    const reviewStage=qualificationReview(task,optional);
+    const priceEvidence=reconcileBudgetEvidence(task,id,listingEvidence.get(id),normalizePostingBudget(task));
+    let reviewStage=qualificationReview(task,optional);
+    if(reviewStage==="price_review"&&priceEvidence.state==="listing_price_review")reviewStage="listing_price_review";
+    if(["cross_source_conflict","listing_conflict","detail_conflict"].includes(priceEvidence.state))reviewStage="rejected_price_conflict";
     const qualified=reviewStage==="scope_and_readiness_review"&&q.eligible&&autonomousAmountAllowed(q.budget_cents);
     const nonEscrowQualified=reviewStage==="scope_and_readiness_review"&&!qualified&&optional.eligible&&optional.non_escrow_review_allowed&&autonomousAmountAllowed(optional.budget_cents);
-    diagnostics.detail_probes.push({problem_id:id,field_shapes:fundingFieldShape(task),verified_budget_cents:q.budget_cents,escrow_status:q.escrow_status,status:q.status,qualified,non_escrow_qualified:nonEscrowQualified,qualification_stage:reviewStage,budget_evidence_state:optional.budget_evidence_state,reasons:q.reasons});
+    diagnostics.detail_probes.push({problem_id:id,field_shapes:fundingFieldShape(task),verified_budget_cents:q.budget_cents,escrow_status:q.escrow_status,status:q.status,qualified,non_escrow_qualified:nonEscrowQualified,qualification_stage:reviewStage,budget_evidence_state:optional.budget_evidence_state,price_evidence_state:priceEvidence.state,listing_price_review_cents:priceEvidence.state==="listing_price_review"?priceEvidence.cents:null,reasons:q.reasons});
     if(qualified)eligible.add(id);
     if(nonEscrowQualified)nonEscrow.add(id);
    }catch{diagnostics.detail_probes.push({problem_id:id,unavailable:true})}
@@ -274,7 +292,7 @@ export async function runScheduledScan(env) {
   candidates=Array.from(eligible).slice(0,50);
   diagnostics.non_escrow_candidate_ids=Array.from(nonEscrow).slice(0,50);
   diagnostics.non_escrow_candidates=diagnostics.non_escrow_candidate_ids.length;
-  diagnostics.price_review_ids=diagnostics.detail_probes.filter(x=>x.qualification_stage==="price_review").map(x=>x.problem_id);
+  diagnostics.price_review_ids=diagnostics.detail_probes.filter(x=>["price_review","listing_price_review"].includes(x.qualification_stage)).map(x=>x.problem_id);
   diagnostics.qualification_stage_counts={};
   for(const p of diagnostics.detail_probes){const stage=p.qualification_stage??"detail_unavailable";diagnostics.qualification_stage_counts[stage]=(diagnostics.qualification_stage_counts[stage]??0)+1;}
  }catch{outcome="unavailable";}
