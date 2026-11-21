@@ -6,5 +6,17 @@
   "workers_dev": true,
   "ai": {
     "binding": "AI"
+  },
+  "d1_databases": [
+    {
+      "binding": "BID_LEDGER",
+      "database_name": "sprite-bid-ledger",
+      "database_id": "7c7ad5f1-0aa5-43f5-ae4f-2bffd9bfe134"
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "*/15 * * * *"
+    ]
   }
 }
