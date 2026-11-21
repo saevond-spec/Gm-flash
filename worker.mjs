@@ -65,7 +65,7 @@ function validBid(b) {
     typeof b?.message==="string" && b.message.length>=10 && b.message.length<=1000;
 }
 
-const PAGE = "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>ClawScout</title><style>body{max-width:680px;margin:35px auto;padding:16px;background:#122034;color:#eaf4ff;font:16px system-ui}input,textarea,button{display:block;box-sizing:border-box;width:100%;padding:12px;margin:10px 0;border-radius:8px;font:inherit}button{background:#78ddcd;color:#123;border:0;font-weight:700}pre{white-space:pre-wrap;overflow-wrap:anywhere}input,textarea{background:#273b53;color:#fff;border:1px solid #627b92}</style><h1>ClawScout Independent</h1><p>ClawHunt read-only webhook and human-confirmed bidding. No automated bids, payments, customer-file access, or Star integration.</p><label>Operator control token</label><input id=\"token\" type=\"password\" autocomplete=\"off\"><h2>ClawHunt</h2><button id=\"check\">Verify connection</button><button id=\"browse\">Browse tasks</button><button id=\"hookcheck\">Check webhook signing</button><label>Problem ID</label><input id=\"pid\" type=\"number\"><label>Bid amount in USD</label><input id=\"usd\" type=\"number\" min=\"0.01\" max=\"1000\" step=\"0.01\"><label>Plan</label><textarea id=\"plan\" maxlength=\"1000\" rows=\"5\"></textarea><button id=\"drybid\">Test bid safely (no submission)</button><button id=\"bid\">Confirm and place bid</button><h2>Draft proposal</h2><textarea id=\"task\" maxlength=\"5000\" rows=\"5\"></textarea><button id=\"draft\">Draft with AI</button><pre id=\"out\">Set private Worker secrets CONTROL_TOKEN and CPH_API_KEY before connecting.</pre><script>\nconst el=id=>document.getElementById(id);\nasync function api(path,payload){el(\"out\").textContent=\"Connecting...\";try{const r=await fetch(path,{method:payload?\"POST\":\"GET\",headers:{\"Content-Type\":\"application/json\",\"x-control-token\":el(\"token\").value},body:payload?JSON.stringify(payload):undefined});el(\"out\").textContent=JSON.stringify(await r.json(),null,2).slice(0,15000)}catch(e){el(\"out\").textContent=\"Request failed\"}}\nel(\"check\").onclick=()=>api(\"/api/connection\");el(\"browse\").onclick=()=>api(\"/api/problems\");\nel(\"hookcheck\").onclick=()=>api(\"/api/webhook-check\");\nel(\"draft\").onclick=()=>api(\"/api/draft\",{task:el(\"task\").value});\nel(\"drybid\").onclick=()=>{const id=el(\"pid\").value,usd=el(\"usd\").value,plan=el(\"plan\").value,m=usd.match(/^(\\d+)(?:\\.(\\d{1,2}))?$/);if(!id||!m||plan.length<10){alert(\"Fill ID, amount and plan\");return}const cents=Number(m[1])*100+Number((m[2]||\"\").padEnd(2,\"0\"));api(\"/api/bid-dry-run\",{problem_id:id,amount_cents:cents,message:plan})};\nel(\"bid\").onclick=()=>{const id=el(\"pid\").value,usd=el(\"usd\").value,plan=el(\"plan\").value,m=usd.match(/^(\\d+)(?:\\.(\\d{1,2}))?$/);if(!id||!m||plan.length<10){alert(\"Fill ID, amount and plan\");return}const cents=Number(m[1])*100+Number((m[2]||\"\").padEnd(2,\"0\"));if(!confirm(\"Submit REAL bid of $\"+usd+\" on ClawHunt problem #\"+id+\"?\"))return;api(\"/api/bid\",{problem_id:id,amount_cents:cents,message:plan,confirm:\"PLACE_BID\"})};\n</script></html>";
+const PAGE = "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>ClawScout</title><style>body{max-width:680px;margin:35px auto;padding:16px;background:#122034;color:#eaf4ff;font:16px system-ui}input,textarea,button{display:block;box-sizing:border-box;width:100%;padding:12px;margin:10px 0;border-radius:8px;font:inherit}button{background:#78ddcd;color:#123;border:0;font-weight:700}pre{white-space:pre-wrap;overflow-wrap:anywhere}input,textarea{background:#273b53;color:#fff;border:1px solid #627b92}</style><h1>ClawScout Independent</h1><p>ClawHunt read-only webhook and human-confirmed bidding. No automated bids, payments, customer-file access, or Star integration.</p><label>Operator control token</label><input id=\"token\" type=\"password\" autocomplete=\"off\"><h2>ClawHunt</h2><button id=\"check\">Verify connection</button><button id=\"browse\">Browse tasks</button><button id=\"hookcheck\">Check webhook signing</button><label>Problem ID</label><input id=\"pid\" type=\"number\"><label>Bid amount in USD</label><input id=\"usd\" type=\"number\" min=\"0.01\" max=\"1000\" step=\"0.01\"><label>Plan</label><textarea id=\"plan\" maxlength=\"1000\" rows=\"5\"></textarea><button id=\"funding\">Inspect task funding (read-only)</button><button id=\"drybid\">Test bid safely (no submission)</button><button id=\"bid\">Confirm and place bid</button><h2>Draft proposal</h2><textarea id=\"task\" maxlength=\"5000\" rows=\"5\"></textarea><button id=\"draft\">Draft with AI</button><pre id=\"out\">Set private Worker secrets CONTROL_TOKEN and CPH_API_KEY before connecting.</pre><script>\nconst el=id=>document.getElementById(id);\nasync function api(path,payload){el(\"out\").textContent=\"Connecting...\";try{const r=await fetch(path,{method:payload?\"POST\":\"GET\",headers:{\"Content-Type\":\"application/json\",\"x-control-token\":el(\"token\").value},body:payload?JSON.stringify(payload):undefined});el(\"out\").textContent=JSON.stringify(await r.json(),null,2).slice(0,15000)}catch(e){el(\"out\").textContent=\"Request failed\"}}\nel(\"check\").onclick=()=>api(\"/api/connection\");el(\"browse\").onclick=()=>api(\"/api/problems\");\nel(\"hookcheck\").onclick=()=>api(\"/api/webhook-check\");\nel(\"draft\").onclick=()=>api(\"/api/draft\",{task:el(\"task\").value});\nel(\"funding\").onclick=()=>api(\"/api/problem-check\",{problem_id:el(\"pid\").value});\nel(\"drybid\").onclick=()=>{const id=el(\"pid\").value,usd=el(\"usd\").value,plan=el(\"plan\").value,m=usd.match(/^(\\d+)(?:\\.(\\d{1,2}))?$/);if(!id||!m||plan.length<10){alert(\"Fill ID, amount and plan\");return}const cents=Number(m[1])*100+Number((m[2]||\"\").padEnd(2,\"0\"));api(\"/api/bid-dry-run\",{problem_id:id,amount_cents:cents,message:plan})};\nel(\"bid\").onclick=()=>{const id=el(\"pid\").value,usd=el(\"usd\").value,plan=el(\"plan\").value,m=usd.match(/^(\\d+)(?:\\.(\\d{1,2}))?$/);if(!id||!m||plan.length<10){alert(\"Fill ID, amount and plan\");return}const cents=Number(m[1])*100+Number((m[2]||\"\").padEnd(2,\"0\"));if(!confirm(\"Submit REAL bid of $\"+usd+\" on ClawHunt problem #\"+id+\"?\"))return;api(\"/api/bid\",{problem_id:id,amount_cents:cents,message:plan,confirm:\"PLACE_BID\"})};\n</script></html>";
 
 export default {
  async fetch(req,env) {
@@ -80,12 +80,35 @@ export default {
     catch {return json({error:"Webhook authentication unavailable; event not processed"},503)}
     if(!(await signed(req,hookSecret,raw)))return json({error:"Invalid webhook signature or stale timestamp"},401);
     let event;try{event=JSON.parse(new TextDecoder().decode(raw))}catch{return json({error:"Invalid JSON"},400)}
-    if(event?.event_type==="capability_probe")return json({probe_id:typeof event.probe_id==="string"?event.probe_id.slice(0,100):null,status:"error",error:"Capabilities not yet implemented; no fabricated probe results"});
+    if(event?.event_type==="capability_probe"){
+      const probe_id=typeof event.probe_id==="string"?event.probe_id.slice(0,100):null;
+      if(event.probe_type!=="file_transfer") return json({probe_id,status:"error",error:"Requested capability not yet implemented"});
+      // Deliberately restrict this probe to ClawHunt's public test file.
+      // This Worker never downloads arbitrary URLs or customer files.
+      const allowed="https://clawhunt.store/api/v1/probe-files/test-file-v1.txt";
+      if(event?.payload?.file_url!==allowed)return json({probe_id,status:"error",error:"File URL not allowlisted"});
+      const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),6500);
+      try {
+        const result=await fetch(allowed,{method:"GET",redirect:"manual",signal:controller.signal,
+          headers:{"Accept":"text/plain","User-Agent":"gm-flash-sprite-probe/1.0"}});
+        if(result.status!==200)return json({probe_id,status:"error",error:"Probe download failed: HTTP "+result.status});
+        if(Number(result.headers.get("content-length")||0)>65536)return json({probe_id,status:"error",error:"Probe file too large"});
+        const rawFile=await result.arrayBuffer();
+        if(rawFile.byteLength>65536)return json({probe_id,status:"error",error:"Probe file too large"});
+        const bytes=new Uint8Array(rawFile);
+        const sha=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",bytes)),b=>b.toString(16).padStart(2,"0")).join("");
+        return json({probe_id,status:"success",result:{
+          file_hash:"sha256:"+sha,file_size:bytes.byteLength,
+          content_preview:new TextDecoder().decode(bytes).slice(0,100)
+        }});
+      }catch{return json({probe_id,status:"error",error:"Probe download or hashing failed"})}
+      finally {clearTimeout(timeout)}
+    }
     return json({received:true,verified:true,action:"none",note:"Review orders manually on ClawHunt"});
   }
 
   // Credentials are never returned to the operator or to ClawHunt.
-  if(["/api/connection","/api/problems","/api/bid","/api/bid-dry-run","/api/webhook-check"].includes(path)){
+  if(["/api/connection","/api/problems","/api/problem-check","/api/bid","/api/bid-dry-run","/api/webhook-check"].includes(path)){
     if(!(await tokenOkay(req.headers.get("x-control-token"),env.CONTROL_TOKEN)))return json({error:"Unauthorized. Set CONTROL_TOKEN and supply it privately."},401);
     if(!env.CPH_API_KEY || !/^cph_/.test(env.CPH_API_KEY))return json({error:"Missing CPH_API_KEY Worker secret. Configure it with the independent ClawScout key."},503);
     const call=async(p,method="GET",payload)=>{
@@ -124,6 +147,29 @@ export default {
       if(path==="/api/problems"){
         const r=await call("/api/v1/problems");
         return json({connected:r.ok,upstream_status:r.status,problems:r.data},r.ok?200:502);
+      }
+      if(path==="/api/problem-check"){
+        if(req.method!=="POST")return json({error:"POST required"},405);
+        if(Number(req.headers.get("content-length")||0)>2048)return json({error:"Body too large"},413);
+        let body;try{body=await req.json()}catch{return json({error:"Invalid JSON"},400)}
+        const id=String(body?.problem_id??"");
+        if(!/^[1-9]\d{0,9}$/.test(id))return json({error:"Invalid problem ID"},400);
+        const identity=await spriteMetadata(env);
+        if(identity.admission_status!=="approved")return json({error:"Sprite is not approved"},403);
+        const r=await call("/api/v1/problems/"+id);
+        if(!r.ok)return json({found:false,upstream_status:r.status},r.status===404?404:502);
+        const task=r.data?.data?.problem??r.data?.data??r.data?.problem??r.data??{};
+        const escrow=typeof task.escrow_status==="string"?task.escrow_status:null;
+        const funding=task.funded===true || task.is_funded===true || ["held","funded","reserved","secured"].includes((escrow??"").toLowerCase());
+        return json({found:true,identity_verified:true,problem_id:id,
+          title:typeof task.title==="string"?task.title.slice(0,200):null,
+          status:task.status??null,escrow_status:escrow,
+          funded_flag:typeof task.funded==="boolean"?task.funded:(typeof task.is_funded==="boolean"?task.is_funded:null),
+          budget:task.budget??task.budget_cents??null,category:task.category??null,
+          funding_assessment:funding?"funding_indicated":"unverified_or_unfunded",
+          note:"Funding information may change. Confirm official escrow status before doing paid work. No bid sent.",
+          request_sent_to_bid_endpoint:false
+        });
       }
       if(req.method!=="POST")return json({error:"POST required"},405);
       if(Number(req.headers.get("content-length")||0)>4000)return json({error:"Body too large"},413);
