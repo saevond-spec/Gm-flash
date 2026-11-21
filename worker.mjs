@@ -65,6 +65,29 @@ function validBid(b) {
     typeof b?.message==="string" && b.message.length>=10 && b.message.length<=1000;
 }
 
+
+// Conservative qualification. Unknown fields are not proof of escrow.
+export function qualifyTask(task, id, amountCents=null) {
+  const norm=x=>typeof x==="string"?x.trim().toLowerCase():"";
+  const status=norm(task?.status);
+  const escrow=norm(task?.escrow_status);
+  const reasons=[];
+  const flags=[task?.funded,task?.is_funded];
+  const simulated=task?.is_simulated===true||task?.simulated===true||task?.is_simulation===true||norm(task?.bounty_type)==="simulated";
+  const knownId=task?.id??task?.problem_id;
+  if(knownId===undefined||String(knownId)!==String(id))reasons.push("task_identity_unverified");
+  if(!["open","bidding"].includes(status))reasons.push("task_not_open_or_status_unknown");
+  if(simulated)reasons.push("simulated_bounty");
+  if(escrow!=="held" || flags.includes(false))reasons.push("escrow_not_confirmed_held");
+  const budget=Number.isSafeInteger(task?.budget_cents)&&task.budget_cents>0?task.budget_cents:null;
+  if(amountCents!==null && (budget===null || amountCents>budget))reasons.push(budget===null?"budget_cents_unverified":"bid_above_budget");
+  return {problem_id:String(id),status:status||null,escrow_status:escrow||null,simulated_flag:simulated,budget_cents:budget,
+    funding_assessment:escrow==="held"&&!flags.includes(false)&&!simulated?"funding_indicated":"unverified_or_unfunded",
+    eligible:reasons.length===0,reasons,fee_assumption_percent:25,
+    net_at_quoted_amount_cents:amountCents===null?null:Math.floor(amountCents*75/100),
+    delivery_capability_verified:false};
+}
+
 const PAGE = "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>ClawScout</title><style>body{max-width:680px;margin:35px auto;padding:16px;background:#122034;color:#eaf4ff;font:16px system-ui}input,textarea,button{display:block;box-sizing:border-box;width:100%;padding:12px;margin:10px 0;border-radius:8px;font:inherit}button{background:#78ddcd;color:#123;border:0;font-weight:700}pre{white-space:pre-wrap;overflow-wrap:anywhere}input,textarea{background:#273b53;color:#fff;border:1px solid #627b92}</style><h1>ClawScout Independent</h1><p>ClawHunt read-only webhook and human-confirmed bidding. No automated bids, payments, customer-file access, or Star integration.</p><label>Operator control token</label><input id=\"token\" type=\"password\" autocomplete=\"off\"><h2>ClawHunt</h2><button id=\"check\">Verify connection</button><button id=\"browse\">Browse tasks</button><button id=\"hookcheck\">Check webhook signing</button><button id=\"officialrun\">Run official ClawHunt benchmarks</button><button id=\"officialstatus\">Read official scores</button><label>Problem ID</label><input id=\"pid\" type=\"number\"><label>Bid amount in USD</label><input id=\"usd\" type=\"number\" min=\"0.01\" max=\"1000\" step=\"0.01\"><label>Plan</label><textarea id=\"plan\" maxlength=\"1000\" rows=\"5\"></textarea><button id=\"funding\">Inspect task funding (read-only)</button><button id=\"drybid\">Test bid safely (no submission)</button><button id=\"bid\">Confirm and place bid</button><h2>Draft proposal</h2><textarea id=\"task\" maxlength=\"5000\" rows=\"5\"></textarea><button id=\"draft\">Draft with AI</button><pre id=\"out\">Set private Worker secrets CONTROL_TOKEN and CPH_API_KEY before connecting.</pre><script>\nconst el=id=>document.getElementById(id);\nasync function api(path,payload){el(\"out\").textContent=\"Connecting...\";try{const r=await fetch(path,{method:payload?\"POST\":\"GET\",headers:{\"Content-Type\":\"application/json\",\"x-control-token\":el(\"token\").value},body:payload?JSON.stringify(payload):undefined});el(\"out\").textContent=JSON.stringify(await r.json(),null,2).slice(0,15000)}catch(e){el(\"out\").textContent=\"Request failed\"}}\nel(\"check\").onclick=()=>api(\"/api/connection\");el(\"browse\").onclick=()=>api(\"/api/problems\");\nel(\"officialrun\").onclick=()=>api(\"/api/benchmark-run\",{});el(\"officialstatus\").onclick=()=>api(\"/api/benchmark-status\");\nel(\"hookcheck\").onclick=()=>api(\"/api/webhook-check\");\nel(\"draft\").onclick=()=>api(\"/api/draft\",{task:el(\"task\").value});\nel(\"funding\").onclick=()=>api(\"/api/problem-check\",{problem_id:el(\"pid\").value});\nel(\"drybid\").onclick=()=>{const id=el(\"pid\").value,usd=el(\"usd\").value,plan=el(\"plan\").value,m=usd.match(/^(\\d+)(?:\\.(\\d{1,2}))?$/);if(!id||!m||plan.length<10){alert(\"Fill ID, amount and plan\");return}const cents=Number(m[1])*100+Number((m[2]||\"\").padEnd(2,\"0\"));api(\"/api/bid-dry-run\",{problem_id:id,amount_cents:cents,message:plan})};\nel(\"bid\").onclick=()=>{const id=el(\"pid\").value,usd=el(\"usd\").value,plan=el(\"plan\").value,m=usd.match(/^(\\d+)(?:\\.(\\d{1,2}))?$/);if(!id||!m||plan.length<10){alert(\"Fill ID, amount and plan\");return}const cents=Number(m[1])*100+Number((m[2]||\"\").padEnd(2,\"0\"));if(!confirm(\"Submit REAL bid of $\"+usd+\" on ClawHunt problem #\"+id+\"?\"))return;api(\"/api/bid\",{problem_id:id,amount_cents:cents,message:plan,confirm:\"PLACE_BID\"})};\n</script></html>";
 
 export default {
@@ -191,15 +214,10 @@ export default {
         const r=await call("/api/v1/problems/"+id);
         if(!r.ok)return json({found:false,upstream_status:r.status},r.status===404?404:502);
         const task=r.data?.data?.problem??r.data?.data??r.data?.problem??r.data??{};
-        const escrow=typeof task.escrow_status==="string"?task.escrow_status:null;
-        const funding=task.funded===true || task.is_funded===true || ["held","funded","reserved","secured"].includes((escrow??"").toLowerCase());
-        return json({found:true,identity_verified:true,problem_id:id,
-          title:typeof task.title==="string"?task.title.slice(0,200):null,
-          status:task.status??null,escrow_status:escrow,
-          funded_flag:typeof task.funded==="boolean"?task.funded:(typeof task.is_funded==="boolean"?task.is_funded:null),
-          budget:task.budget??task.budget_cents??null,category:task.category??null,
-          funding_assessment:funding?"funding_indicated":"unverified_or_unfunded",
-          note:"Funding information may change. Confirm official escrow status before doing paid work. No bid sent.",
+        return json({found:true,identity_verified:true,
+          ...qualifyTask(task,id),
+          title:typeof task.title==="string"?task.title.slice(0,200):null,category:task.category??null,
+          note:"Conservative preflight using returned API fields; unknown schemas fail closed. Confirm delivery capability independently. No bid sent.",
           request_sent_to_bid_endpoint:false
         });
       }
@@ -210,14 +228,19 @@ export default {
       // Fail closed if the saved credential is not Sprite's approved key.
       const agent=await spriteMetadata(env);
       if(agent.admission_status!=="approved")return json({error:"Sprite is not approved for bidding"},403);
+      if(path==="/api/bid" && b.confirm!=="PLACE_BID")return json({error:"Explicit PLACE_BID confirmation required"},400);
+      const id=String(b.problem_id);
+      const detail=await call("/api/v1/problems/"+id);
+      if(!detail.ok)return json({error:"Cannot verify task details",upstream_status:detail.status,bid_sent:false},502);
+      const task=detail.data?.data?.problem??detail.data?.data??detail.data?.problem??detail.data;
+      const assessment=qualifyTask(task,id,b.amount_cents);
       if(path==="/api/bid-dry-run"){
-        return json({dry_run:true,accepted_locally:true,identity_verified:true,
-          agent_id:SPRITE_ID,admission_status:agent.admission_status,
-          problem_id:String(b.problem_id),amount_cents:b.amount_cents,
-          task_funding_checked:false,request_sent_to_clawhunt:false,
-          note:"Input and identity checks passed. No bid was sent; verify job and funding manually before bidding."});
+        return json({dry_run:true,accepted_locally:true,identity_verified:true,agent_id:SPRITE_ID,
+          admission_status:agent.admission_status,amount_cents:b.amount_cents,task_funding_checked:true,
+          qualification:assessment,request_sent_to_clawhunt:false,
+          note:"No bid sent. Passing funding preflight is not evidence of deliverability."});
       }
-      if(b.confirm!=="PLACE_BID")return json({error:"Explicit PLACE_BID confirmation required"},400);
+      if(!assessment.eligible)return json({error:"Bid blocked by funding, identity, status or budget preflight",qualification:assessment,bid_sent:false},409);
       // Real bids require a deliberate operator confirmation.
       const r=await call("/api/v1/problems/"+String(b.problem_id)+"/bid","POST",{amount:b.amount_cents,message:b.message});
       return json({submitted:r.ok,upstream_status:r.status,problem_id:String(b.problem_id),amount_cents:b.amount_cents,response:r.data},r.ok?200:502);
