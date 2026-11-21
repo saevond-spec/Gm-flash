@@ -1,0 +1,15 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {evaluateReadiness,recommendReview} from "../readiness-evaluator.mjs";
+const now=1800000000;
+const good={problem_id:"123",profile:"csv_cleanup",amount_cents:2000,platform_limit_cents:2500,hours:1,cost_cents:0,scope_verified:1,isolated_environment_verified:1,rehearsal_passed:1,verified_at:now-1,valid_until:now+100};
+test("complete fictional attestation",()=>assert.equal(evaluateReadiness(good,now).ready,true));
+for(const [key,value] of Object.entries({problem_id:"bad",profile:"blender",amount_cents:1999,platform_limit_cents:1999,hours:0,cost_cents:1,scope_verified:0,isolated_environment_verified:0,rehearsal_passed:0,verified_at:now+1,valid_until:now}))test("fails closed "+key,()=>assert.equal(evaluateReadiness({...good,[key]:value},now).ready,false));
+test("missing evidence",()=>assert.equal(evaluateReadiness(null,now).ready,false));
+test("oversized quote",()=>assert.equal(evaluateReadiness({...good,amount_cents:2501},now).ready,false));
+test("excess expiry",()=>assert.equal(evaluateReadiness({...good,valid_until:now+86401},now).ready,false));
+const task={problem_id:"123",status:"bidding",qualified:true,verified_budget_cents:2500};
+test("unknown requirements remain review only",()=>assert.equal(recommendReview(task,null,now*1000).state,"independent_scope_and_isolation_review_required"));
+test("missing budget",()=>assert.equal(recommendReview({...task,verified_budget_cents:null},null,now*1000).state,"price_evidence_required"));
+test("closed",()=>assert.equal(recommendReview({...task,status:"closed"},null,now*1000).state,"not_qualified"));
+test("recent unsupported",()=>assert.equal(recommendReview(task,{problem_id:"123",capability_result:"unsupported_profile",observed_at:new Date(now*1000-1000).toISOString()},now*1000).state,"known_unsupported"));
