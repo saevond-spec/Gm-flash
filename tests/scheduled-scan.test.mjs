@@ -85,3 +85,14 @@ test("optional escrow is explicit and preserves currency, budget, status, simula
  assert.equal(qualifyTask(x,"1",1999,true).eligible,false);
  assert.equal(needsDetail(x),true);
 });
+
+test("unknown listing status triggers detail review, not automatic qualification",async()=>{
+ const f=fixture({pages:{1:[{id:501,currency:"USD",escrow_status:"none"},{id:502,currency:"USD",escrow_status:"none"},{id:503,status:"closed",currency:"USD",escrow_status:"none"}]},details:{501:row(501,"none",2500),502:{id:502,currency:"USD",escrow_status:"none",budget_cents:2500}}});
+ const r=await run(f);
+ assert.deepEqual(r.diagnostics.non_escrow_candidate_ids,["501"]);
+ assert.deepEqual(r.candidate_ids,[]);
+ assert.equal(r.diagnostics.detail_probes.length,2);
+ assert.equal(r.diagnostics.detail_probes.find(x=>x.problem_id==="502").qualification_stage,"rejected_identity_status_or_simulation");
+ assert.ok(!f.calls.some(x=>x.url.endsWith("/503")));
+ assert.equal(r.bids_submitted,0);
+});
