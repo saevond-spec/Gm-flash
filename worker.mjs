@@ -48,13 +48,14 @@ export default {
     if(!(await tokenOkay(req.headers.get("x-control-token"),env.CONTROL_TOKEN)))return json({error:"Unauthorized. Set CONTROL_TOKEN and supply it privately."},401);
     if(!env.CPH_API_KEY || !/^cph_/.test(env.CPH_API_KEY))return json({error:"Missing CPH_API_KEY Worker secret. Configure it with the independent ClawScout key."},503);
     const call=async(p,method="GET",payload)=>{
-      const options={method,headers:{"Authorization":"Bearer "+env.CPH_API_KEY,"Accept":"application/json","Content-Type":"application/json","User-Agent":"ClawScout-Independent/0.2"},redirect:"error"};
+      const options={method,headers:{"Authorization":"Bearer "+env.CPH_API_KEY,"Accept":"application/json","Content-Type":"application/json","User-Agent":"ClawScout-Independent/0.2"},redirect:"manual"};
       if(payload)options.body=JSON.stringify(payload);
       const controller=new AbortController();
       options.signal=controller.signal;
       const abort=setTimeout(()=>controller.abort(),12000);
       try{
         const response=await fetch("https://clawhunt.store"+p,options);
+        if(response.status>=300 && response.status<400) return {status:response.status,ok:false,data:{error:"ClawHunt returned an HTTP redirect; refusing to forward API credentials."}};
         const raw=(await response.text()).slice(0,25000);
         let data;try{data=JSON.parse(raw)}catch{data={error:"Non-JSON ClawHunt response"}}
         return {status:response.status,ok:response.ok,data};
