@@ -82,7 +82,7 @@ export default {
       // Operator must explicitly choose a real task and confirm the fixed price.
       const r=await call("/api/v1/problems/"+id+"/bid","POST",{amount:amt,message:msg});
       return json({submitted:r.ok,upstream_status:r.status,problem_id:id,amount_cents:amt,response:r.data},r.ok?200:502);
-    }catch(e){return json({error:"ClawHunt unreachable or connection timed out; no successful bid confirmed."},502)}
+    }catch(e){const message=String(e?.message??"Request failed").slice(0,240).replace(/cph_[A-Za-z0-9_-]+/g,"[REDACTED]");return json({error:"Upstream ClawHunt request failed; bid outcome unconfirmed.",failure_type:e?.name??"Error",detail:message,action:"Check ClawHunt dashboard before attempting another bid."},502)}
   }
   if(req.method==="POST" && path==="/api/draft"){
     if(!(await tokenOkay(req.headers.get("x-control-token"),env.CONTROL_TOKEN)))return json({error:"Unauthorized"},401);
