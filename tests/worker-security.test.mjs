@@ -274,3 +274,32 @@ test("integrated bid-and-solve sends exactly one simulated bid after all gates p
  assert.equal(r.status,200);assert.equal((await r.json()).submitted,true);assert.equal(calls.filter(c=>c.method==="POST").length,1);
  }finally{globalThis.fetch=savedFetch}
 });
+
+test("metadata noninterference: 256 changes to confidential fields do not change control-plane output",()=>{
+ const base={id:81,status:"open",escrow_status:"held",budget_cents:2000,category:"research"};
+ const now="2026-01-01T00:00:00.000Z";
+ const expected=JSON.stringify(marketObservation([base],now));
+ for(let i=0;i<256;i++){
+  const marker="FICTIONAL_CUSTOMER_CANARY_"+i;
+  const payload={...base,title:marker,description:marker,attachments:[{url:"https://example.invalid/"+marker}],buyer:{name:marker,token:marker},credentials:marker,extra:{file:marker}};
+  assert.equal(JSON.stringify(marketObservation([payload],now)),expected);
+ }
+});
+test("unknown metadata strings are withheld rather than echoed",()=>{
+ const result=marketObservation([{id:82,status:"FICTIONAL_SECRET_1",escrow_status:"FICTIONAL_SECRET_2",category:"FICTIONAL_SECRET_3",title:"FICTIONAL_SECRET_4",budget_cents:2000}]);
+ assert.ok(!JSON.stringify(result).includes("FICTIONAL_SECRET"));
+ assert.equal(result.observations[0].review_candidate,false);
+});
+test("legacy browse endpoint no longer emits raw buyer material",async()=>{
+ const calls=[];globalThis.fetch=async(url,opts={})=>{
+  calls.push(String(url));return Response.json({data:{problems:[{id:9,title:"FICTIONAL_PRIVATE_TITLE",status:"open",escrow_status:"held",budget_cents:4000,description:"FICTIONAL_PRIVATE_BRIEF",attachments:["FICTIONAL_FILE"],buyer:{id:"FICTIONAL_BUYER"}}]}});
+ };
+ try{const r=await auth("/api/problems");assert.equal(r.status,200);const body=await r.text();assert.ok(!body.includes("FICTIONAL_"));assert.equal(JSON.parse(body).observations[0].problem_id,"9");assert.equal(calls.length,1)}finally{globalThis.fetch=savedFetch}
+});
+test("customer ingestion routes deny without reading or executing the supplied payload",async()=>{
+ const old=globalThis.fetch;let called=0;globalThis.fetch=async()=>{called++;throw Error("Unexpected external call")};
+ try{for(const path of ["/api/customer","/api/customer-files","/api/customer-upload","/api/customer-execution","/api/job-files","/api/job-upload"]){
+  const request=new Request(origin+path,{method:"POST",body:"FICTIONAL_PRIVATE_PAYLOAD"});
+  const r=await worker.fetch(request,fakeEnv());assert.equal(r.status,403);assert.equal(request.bodyUsed,false);assert.ok(!(await r.text()).includes("FICTIONAL_PRIVATE_PAYLOAD"));
+ }assert.equal(called,0)}finally{globalThis.fetch=old}
+});
