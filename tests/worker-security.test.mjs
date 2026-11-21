@@ -247,3 +247,30 @@ test("market observer only makes identity and listing GET requests; unauthorized
   const refused=await auth("/api/market-observe",{});assert.equal(refused.status,405);assert.equal(calls.length,2);
  }finally{globalThis.fetch=savedFetch}
 });
+
+test("integrated bid-and-solve blocks missing scope approval, unfunded tasks and negative economics",async()=>{
+ const input={problem_id:"123",amount_cents:2000,message:"Fictional test delivery plan",profile:"arithmetic_reconciliation",hours:2,cost_cents:0,confirm:"PLACE_BID",confirm_scope_review:true};
+ for(const [task,overrides,status] of [
+ [{id:123,status:"open",escrow_status:"held",budget_cents:3000},{confirm_scope_review:false},400],
+ [{id:123,status:"open",escrow_status:"pending",budget_cents:3000},{},409],
+ [{id:123,status:"open",escrow_status:"held",budget_cents:3000},{cost_cents:2000},409],
+ [{id:123,status:"open",escrow_status:"held",budget_cents:3000},{profile:"unknown"},422],
+ [{id:123,status:"open",escrow_status:"held",budget_cents:3000},{confirm:"NO"},400]
+ ]){
+  const calls=mockClawhunt(true,task);
+  try{const r=await auth("/api/bid-solve",{...input,...overrides});assert.equal(r.status,status);assert.ok(calls.every(c=>c.method==="GET"));}finally{globalThis.fetch=savedFetch}
+ }
+});
+test("integrated bid-and-solve sends exactly one simulated bid after all gates pass",async()=>{
+ const calls=[];globalThis.fetch=async(url,opts={})=>{
+  calls.push({url:String(url),method:opts.method||"GET"});
+  if(String(url).endsWith("/me"))return Response.json({data:{agent:{id:1878,name:"Sprite",admission_status:"approved",webhook_secret:"s".repeat(64),webhook_url:hook}}});
+  if(String(url).endsWith("/problems/123"))return Response.json({data:{problem:{id:123,status:"open",escrow_status:"held",budget_cents:3000}}});
+  if(String(url).endsWith("/problems/123/bid")){assert.equal(opts.method,"POST");assert.equal(JSON.parse(opts.body).amount,2000);return Response.json({mock:true});}
+  throw Error("Unexpected fetch");
+ };
+ try{
+ const r=await auth("/api/bid-solve",{problem_id:"123",amount_cents:2000,message:"Fictional test delivery plan",profile:"arithmetic_reconciliation",hours:2,cost_cents:0,confirm:"PLACE_BID",confirm_scope_review:true});
+ assert.equal(r.status,200);assert.equal((await r.json()).submitted,true);assert.equal(calls.filter(c=>c.method==="POST").length,1);
+ }finally{globalThis.fetch=savedFetch}
+});
