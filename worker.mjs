@@ -1,3 +1,4 @@
+import { submitWithReservation } from "./bid-reservation.mjs";
 import { solveWorkflow } from "./solve-workflow.mjs";
 import { prepareBidPlan } from "./bid-solve.mjs";
 import { analyzePublicPhoto } from "./photo-vision.mjs";
@@ -162,7 +163,7 @@ export default {
 
   if(/^\/api\/(?:customer(?:-execution|-files|-upload|-job)?|job-files|job-upload)(?:\/|$)/i.test(path))return json({error:"Customer material must remain in a dedicated verified job environment. This control plane accepts none.",customer_execution_allowed:false},403);
   if(req.method==="GET" && path==="/")return new Response(PAGE,{headers:{"content-type":"text/html; charset=utf-8","cache-control":"no-store","content-security-policy":"default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'","x-content-type-options":"nosniff"}});
-  if(req.method==="GET" && path==="/health")return json({service:"ClawScout Independent",deployed:true,webhook:"/cph-webhook",webhook_signature_enforced:true,secret_stored_in_worker:!!env.CPH_WEBHOOK_SECRET,ai_bound:!!env.AI,operator_configured:!!env.CONTROL_TOKEN,auto_bidding:false,clawhunt_api_key_configured:!!env.CPH_API_KEY,manual_bidding_enabled:true,bid_solve_enabled:true,automatic_bid_solve:false,autonomous_bid_policy:AUTONOMOUS_BID_POLICY,manual_bid_limit_cents:100000});
+  if(req.method==="GET" && path==="/health")return json({service:"ClawScout Independent",deployed:true,webhook:"/cph-webhook",webhook_signature_enforced:true,secret_stored_in_worker:!!env.CPH_WEBHOOK_SECRET,ai_bound:!!env.AI,operator_configured:!!env.CONTROL_TOKEN,auto_bidding:false,clawhunt_api_key_configured:!!env.CPH_API_KEY,manual_bidding_enabled:true,bid_solve_enabled:true,automatic_bid_solve:false,autonomous_bid_policy:AUTONOMOUS_BID_POLICY,manual_bid_limit_cents:100000,bid_reservation_guard:true,bid_ledger_bound:!!env.BID_LEDGER});
   if(req.method==="POST" && path==="/cph-webhook"){
     const raw=await req.arrayBuffer();
     if(raw.byteLength>32768)return json({received:false,error:"event too large"},413);
@@ -342,9 +343,9 @@ export default {
         let plan;try{plan=await prepareBidPlan(b,assessment)}catch{return json({error:"Solver readiness validation failed",bid_sent:false},422)}
         if(plan.readiness!=="candidate_for_manual_scope_review"||plan.execution_evidence?.passed!==true)return json({error:"Solver readiness gate blocked bid",reasons:plan.reasons,bid_sent:false},409);
       }
-      // Real bids require a deliberate operator confirmation.
-      const r=await call("/api/v1/problems/"+String(b.problem_id)+"/bid","POST",{amount:b.amount_cents,message:b.message});
-      return json({submitted:r.ok,upstream_status:r.status,problem_id:String(b.problem_id),amount_cents:b.amount_cents,response_body_withheld:true},r.ok?200:502);
+      // Every real submission shares one irreversible reservation, including manual bids.
+      const outcome=await submitWithReservation(env.BID_LEDGER,String(b.problem_id),b.amount_cents,()=>call("/api/v1/problems/"+String(b.problem_id)+"/bid","POST",{amount:b.amount_cents,message:b.message}));
+      return json({...outcome,submitted:false,submission_confirmed:false,problem_id:String(b.problem_id),amount_cents:b.amount_cents,response_body_withheld:true},outcome.http_status);
     }catch(e){const message=String(e?.message??"Request failed").slice(0,240).replace(/cph_[A-Za-z0-9_-]+/g,"[REDACTED]");return json({error:"Upstream ClawHunt request failed; bid outcome unconfirmed.",failure_type:e?.name??"Error",detail:message,action:"Check ClawHunt dashboard before attempting another bid."},502)}
   }
   if(req.method==="POST" && path==="/api/photo-vision"){
