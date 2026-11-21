@@ -261,6 +261,13 @@ test("integrated bid-and-solve blocks missing scope approval, unfunded tasks and
   try{const r=await auth("/api/bid-solve",{...input,...overrides});assert.equal(r.status,status);assert.ok(calls.every(c=>c.method==="GET"));}finally{globalThis.fetch=savedFetch}
  }
 });
+function mockReservationLedger(){
+ const rows=new Map();
+ return {rows,prepare(sql){return {bind(id,amount){return {
+  async first(){assert.match(sql,/INSERT INTO bid_reservations/);if(rows.has(id))return null;rows.set(id,{amount,state:"reserved"});return {problem_id:id}},
+  async run(){assert.match(sql,/UPDATE bid_reservations/);rows.get(id).state="uncertain";return {success:true}}
+ }}}}};
+}
 test("integrated bid-and-solve sends exactly one simulated bid after all gates pass",async()=>{
  const calls=[];globalThis.fetch=async(url,opts={})=>{
   calls.push({url:String(url),method:opts.method||"GET"});
@@ -270,8 +277,12 @@ test("integrated bid-and-solve sends exactly one simulated bid after all gates p
   throw Error("Unexpected fetch");
  };
  try{
- const r=await auth("/api/bid-solve",{problem_id:"123",amount_cents:2000,message:"Fictional test delivery plan",profile:"arithmetic_reconciliation",hours:2,cost_cents:0,confirm:"PLACE_BID",confirm_scope_review:true});
- assert.equal(r.status,200);assert.equal((await r.json()).submitted,true);assert.equal(calls.filter(c=>c.method==="POST").length,1);
+ const ledger=mockReservationLedger(),env={...fakeEnv(),BID_LEDGER:ledger};
+ const r=await auth("/api/bid-solve",{problem_id:"123",amount_cents:2000,message:"Fictional test delivery plan",profile:"arithmetic_reconciliation",hours:2,cost_cents:0,confirm:"PLACE_BID",confirm_scope_review:true},env);
+ assert.equal(r.status,502);const outcome=await r.json();assert.equal(outcome.attempted,true);assert.equal(outcome.requires_reconciliation,true);assert.equal(calls.filter(c=>c.method==="POST").length,1);
+ const retry=await auth("/api/bid",{problem_id:"123",amount_cents:2000,message:"Fictional repeated plan",confirm:"PLACE_BID"},env);
+ assert.equal(retry.status,409);assert.equal(calls.filter(c=>c.method==="POST").length,1);
+ assert.equal(ledger.rows.get("123").state,"uncertain");
  }finally{globalThis.fetch=savedFetch}
 });
 
