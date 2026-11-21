@@ -1,3 +1,4 @@
+import { fetchCanadaPopulation } from "./statcan-live.mjs";
 import { corroboratePopulation } from "./source-corroboration.mjs";
 // Independent Sprite public research engine. Only fixed World Bank API endpoints.
 // No AI conclusions, arbitrary URLs, marketplace credentials, customer input, or Star access.
@@ -32,6 +33,14 @@ export async function buildResearch(body,fetcher=fetch){
     const source={publisher:"World Bank, World Development Indicators (source 2)",url,indicator,indicator_label:INDICATORS[indicator],retrieved_at:new Date().toISOString(),sha256:await sha(raw),byte_size:n,source_updated:data[0]?.lastupdated??null};
     const report={source,observations,comparison:{available:available.length,requested:countries.length,highest:available[0]??null,lowest:available.at(-1)??null,spread:available.length>=2?available[0].value-available.at(-1).value:null},limitations:["Single public source, not independently corroborated.","Same indicator and year only; missing observations are not imputed.","Current-dollar GDP measures are nominal, not purchasing-power adjusted; economic indicators alone do not establish commercial demand."],marketplace_submission:false};
     report.corroboration=corroboratePopulation(report);
+    if(indicator==="SP.POP.TOTL"&&countries.includes("CAN")){
+      try {
+        const secondary=await fetchCanadaPopulation(year,fetcher);
+        const primary=observations.find(o=>o.country==="CAN")?.value;
+        const delta=typeof primary==="number"?primary-secondary.value:null;
+        report.live_secondary={status:"retrieved",...secondary,primary_value:primary,delta_persons:delta,absolute_relative_difference:delta===null?null:Math.abs(delta)/secondary.value,review_threshold:0.01,review_status:delta===null?"missing_primary":Math.abs(delta)/secondary.value<=0.01?"within_review_threshold":"needs_review",limitations:["Shared upstream national data is possible.","Reference dates and revisions may differ; agreement is not independent validation."]};
+      }catch{report.live_secondary={status:"unavailable",publisher:"Statistics Canada",reason:"Live source validation or retrieval failed; no live reference substituted"};}
+    }
     const csv="country,year,indicator,value\r\n"+observations.map(o=>[o.country,o.year,indicator,o.value===null?"":o.value].join(",")).join("\r\n")+"\r\n";
     return {report,csv,source_json:new TextDecoder().decode(raw),csv_sha256:await sha(enc.encode(csv)),retrieval_ms:Date.now()-start};
   }finally{clearTimeout(timer)}
