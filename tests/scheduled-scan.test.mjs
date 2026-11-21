@@ -1,83 +1,87 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {runScheduledScan} from "../worker.mjs";
+import {runScheduledScan,qualifyTask,needsDetail} from "../worker.mjs";
 const base="https://clawhunt.store";
 const hook="https://gm-flash.saevond.workers.dev/cph-webhook";
-function fixture(agentId=1878){
+function fixture({agentId=1878,pages={},details={},publicPages={}}={}){
  const calls=[],writes=[];
  const env={CPH_API_KEY:"cph_fictional_test_key",BID_LEDGER:{prepare(sql){assert.match(sql,/INSERT INTO scan_status/);return {bind(...args){return {async run(){writes.push(args);return {success:true}}}}}}}};
  const mock=async(url,opts)=>{
-  calls.push({url:String(url),method:opts.method});
-  if(String(url)===base+"/api/v1/me")return Response.json({data:{agent:{id:agentId,name:"Sprite",admission_status:"approved",webhook_url:hook}}});
-  if(String(url)===base+"/api/v1/problems")return Response.json({data:{problems:[
-   {id:1,status:"open",escrow_status:"held",budget_cents:2000,description:"FICTIONAL_PRIVATE_CANARY"},
-   {id:2,status:"open",escrow_status:"pending",budget_cents:3000},
-   {id:3,status:"open",escrow_status:"held",budget_cents:1999},
-   {id:4,status:"open",escrow_status:"held",budget_cents:10000001},
-   {id:5,status:"open",escrow_status:"held",budget_cents:3500,simulated:true}
-  ]}});
+  const u=new URL(url),auth=new Headers(opts.headers).get("authorization");
+  calls.push({url:String(url),method:opts.method,auth:!!auth});
+  assert.equal(u.origin,base);
+  assert.equal(opts.method,"GET");
+  if(u.pathname==="/api/v1/me")return Response.json({data:{agent:{id:agentId,name:"Sprite",admission_status:"approved",webhook_url:hook}}});
+  if(u.pathname==="/api/v1/problems"){
+   assert.ok(auth);
+   const page=u.searchParams.get("page")||"1";
+   return Response.json({data:{problems:pages[page]||pages["1"]||[]}});
+  }
+  if(u.pathname==="/api/problems/"){
+   assert.equal(auth,null,"public requests must not carry agent credentials");
+   const category=u.searchParams.get("category");
+   if(!Object.hasOwn(publicPages,category))return new Response("",{status:503});
+   return Response.json({data:{problems:publicPages[category]}});
+  }
+  const m=u.pathname.match(/^\/api\/v1\/problems\/(\d+)$/);
+  if(m){assert.ok(auth);if(!Object.hasOwn(details,m[1]))return new Response("",{status:404});return Response.json({data:{problem:details[m[1]]}})}
   throw Error("unexpected request");
  };
  return {env,mock,calls,writes}
 }
-test("scheduled scan selects eligible metadata only, persists one record and performs GET only",async()=>{
- const f=fixture(),saved=globalThis.fetch;globalThis.fetch=f.mock;
- try{const r=await runScheduledScan(f.env);assert.equal(r.outcome,"scanned");assert.equal(r.records_examined,5);assert.deepEqual(r.candidate_ids,["1"]);assert.equal(r.bids_submitted,0);assert.equal(f.calls.length,2);assert.ok(f.calls.every(c=>c.method==="GET"));assert.equal(f.writes.length,1);assert.ok(!JSON.stringify(f.writes).includes("FICTIONAL_PRIVATE_CANARY"))}
- finally{globalThis.fetch=saved}
+const row=(id,escrow_status="held",budget_cents=2000,extra={})=>({id,status:"open",escrow_status,budget_cents,currency:"USD",...extra});
+async function run(f){const saved=globalThis.fetch;globalThis.fetch=f.mock;try{return await runScheduledScan(f.env)}finally{globalThis.fetch=saved}}
+test("scheduled scan distinguishes funded and non-escrow candidates only after authenticated details",async()=>{
+ const f=fixture({pages:{1:[row(1,"held",2000,{description:"FICTIONAL_PRIVATE_CANARY"}),row(2,"pending",3000),row(3,"held",1999),row(4,"held",10000001),row(5,"held",3500,{simulated:true})]},details:{1:row(1),2:row(2,"pending",3000)}});
+ const r=await run(f);
+ assert.equal(r.outcome,"scanned");assert.equal(r.records_examined,5);assert.deepEqual(r.candidate_ids,["1"]);
+ assert.deepEqual(r.diagnostics.non_escrow_candidate_ids,["2"]);assert.equal(r.funded_candidates,1);assert.equal(r.bids_submitted,0);
+ assert.equal(r.diagnostics.detail_probes.length,2);assert.equal(f.writes.length,1);
+ assert.ok(!JSON.stringify(f.writes).includes("FICTIONAL_PRIVATE_CANARY"));
 });
-test("scheduled scan refuses mismatched agent and writes no candidate IDs",async()=>{
- const f=fixture(999),saved=globalThis.fetch;globalThis.fetch=f.mock;
- try{const r=await runScheduledScan(f.env);assert.equal(r.outcome,"unavailable");assert.deepEqual(r.candidate_ids,[]);assert.equal(f.calls.length,1);assert.equal(f.writes.length,1)}finally{globalThis.fetch=saved}
+test("scheduled scan refuses mismatched identity",async()=>{
+ const f=fixture({agentId:999});const r=await run(f);assert.equal(r.outcome,"unavailable");assert.deepEqual(r.candidate_ids,[]);assert.equal(f.calls.length,1);assert.equal(f.writes.length,1)
 });
 test("scheduled scan cannot proceed without persistent storage",async()=>{
  await assert.rejects(runScheduledScan({}),/ledger unavailable/);
 });
-
-test("pagination probes expand verified unique IDs and stop on a repeated page",async()=>{
- const f=fixture(),saved=globalThis.fetch;
- const page=(start)=>Array.from({length:20},(_,i)=>({id:start+i,status:"open",escrow_status:i===0?"held":"pending",budget_cents:2000,title:"FICTIONAL_PRIVATE_TITLE"}));
- globalThis.fetch=async(url,opts)=>{
-  if(String(url).endsWith("/me"))return f.mock(url,opts);
-  f.calls.push({url:String(url),method:opts.method});
-  const n=new URL(url).searchParams.get("page");
-  return Response.json({data:{problems:page(n?21:1)}});
- };
- try{
-  const r=await runScheduledScan(f.env);
-  assert.equal(r.records_examined,60);assert.equal(r.diagnostics.unique_records,40);
-  assert.equal(r.diagnostics.duplicate_records,20);assert.equal(r.diagnostics.pages_requested,3);
-  assert.deepEqual(r.candidate_ids,["1","21"]);assert.equal(r.diagnostics.rejections.escrow_not_confirmed_held,38);
-  assert.equal(r.diagnostics.complete_market_scan,false);assert.ok(f.calls.every(x=>x.method==="GET"));
-  assert.ok(!JSON.stringify(f.writes).includes("FICTIONAL_PRIVATE_TITLE"));
- }finally{globalThis.fetch=saved}
+test("pagination counts unique records, stops repeat pages, separates public failures",async()=>{
+ const page=start=>Array.from({length:20},(_,i)=>row(start+i,i===0?"held":"pending",2000,{title:"FICTIONAL_PRIVATE_TITLE"}));
+ const p1=page(1),p2=page(21);
+ const details=Object.fromEntries([...p1,...p2].map(x=>[x.id,x]));
+ const f=fixture({pages:{1:p1,2:p2,3:p2},details});const r=await run(f);
+ assert.equal(r.records_examined,60);assert.equal(r.diagnostics.unique_records,40);assert.equal(r.diagnostics.duplicate_records,20);
+ assert.equal(r.diagnostics.pages_requested,3);assert.equal(r.diagnostics.detail_probes.length,10);
+ assert.equal(r.diagnostics.complete_market_scan,false);assert.ok(!JSON.stringify(f.writes).includes("FICTIONAL_PRIVATE_TITLE"));
+ assert.equal(r.diagnostics.public_discovery.length,3);assert.ok(r.diagnostics.public_discovery.every(x=>x.status==="unavailable"));
 });
-test("ignored pagination never counts repeat page as fresh coverage",async()=>{
- const f=fixture(),saved=globalThis.fetch;
- globalThis.fetch=async(url,opts)=>{
-  if(String(url).endsWith("/me"))return f.mock(url,opts);
-  return Response.json({data:{problems:Array.from({length:20},(_,i)=>({id:i+1,status:"open",escrow_status:"pending",budget_cents:2000}))}});
- };
- try{const r=await runScheduledScan(f.env);assert.equal(r.diagnostics.unique_records,20);assert.equal(r.diagnostics.pages_requested,2);assert.equal(r.diagnostics.second_page_probe,"no_new_ids");assert.equal(r.funded_candidates,0)}finally{globalThis.fetch=saved}
+test("ignored pagination never counts repeat pages as fresh coverage",async()=>{
+ const f=fixture({pages:{1:Array.from({length:20},(_,i)=>row(i+1,"pending"))}});const r=await run(f);
+ assert.equal(r.diagnostics.unique_records,20);assert.equal(r.diagnostics.pages_requested,2);assert.equal(r.diagnostics.second_page_probe,"no_new_ids");
+ assert.equal(r.funded_candidates,0);assert.equal(r.diagnostics.non_escrow_candidates,0)
 });
-
-test("missing listing funding fields trigger bounded detail checks, without inferring units or copying private material",async()=>{
- const f=fixture(),saved=globalThis.fetch;
- globalThis.fetch=async(url,opts)=>{
-  if(String(url).endsWith("/me"))return f.mock(url,opts);
-  f.calls.push({url:String(url),method:opts.method});
-  if(String(url).endsWith("/problems"))return Response.json({data:{problems:[1,2,3,4].map(id=>({id,status:"open",budget:25,description:"FICTIONAL_PRIVATE_LIST"}))}});
-  const id=Number(String(url).split("/").pop());
-  return Response.json({data:{problem:id===1?{id,status:"open",budget_cents:2500,escrow_status:"held",description:"FICTIONAL_PRIVATE_DETAIL"}:{id,status:"open",budget:25,escrow:"FICTIONAL_PRIVATE_UNVERIFIED"}}});
- };
- try{
-  const r=await runScheduledScan(f.env);
-  assert.equal(r.diagnostics.detail_probes.length,3);
-  assert.deepEqual(r.candidate_ids,["1"]);
-  assert.equal(r.diagnostics.listing_funding_field_shapes.budget.number,4);
-  assert.equal(r.diagnostics.detail_probes[1].field_shapes.escrow,"string");
-  assert.equal(r.diagnostics.detail_probes[1].qualified,false);
-  assert.ok(!JSON.stringify(r).includes("FICTIONAL_PRIVATE"));
-  assert.ok(!JSON.stringify(f.writes).includes("FICTIONAL_PRIVATE"));
-  assert.ok(f.calls.every(x=>x.method==="GET"));
- }finally{globalThis.fetch=saved}
+test("unauthenticated public listing cannot qualify alone; detail probes include public discoveries",async()=>{
+ const f=fixture({pages:{1:Array.from({length:20},(_,i)=>row(i+1,"pending"))},publicPages:{data:[row(100,"held",3000,{description:"FICTIONAL_PRIVATE_PUBLIC"}),row(101,"held",5000)],"ml-ai":[row(100,"held",3000)],backend:[]},details:{100:row(100,"pending",3000)}});
+ const r=await run(f);assert.equal(r.funded_candidates,0);assert.deepEqual(r.diagnostics.non_escrow_candidate_ids,["100"]);
+ assert.ok(r.diagnostics.detail_probes.some(x=>x.problem_id==="101"&&x.unavailable===true));
+ assert.ok(f.calls.filter(x=>x.url.includes("/api/problems/")).every(x=>!x.auth));
+ assert.ok(!JSON.stringify(f.writes).includes("FICTIONAL_PRIVATE_PUBLIC"))
+});
+test("missing listing amounts receive bounded detail checks without converting unknown units or retaining free text",async()=>{
+ const f=fixture({pages:{1:[1,2,3,4].map(id=>({id,status:"open",budget:25,description:"FICTIONAL_PRIVATE_LIST"}))},details:{1:row(1,"held",2500,{description:"FICTIONAL_PRIVATE_DETAIL"}),2:{id:2,status:"open",budget:25,escrow:"FICTIONAL_PRIVATE_UNVERIFIED"}}});const r=await run(f);
+ assert.equal(r.diagnostics.detail_probes.length,4);assert.deepEqual(r.candidate_ids,["1"]);
+ assert.equal(r.diagnostics.listing_funding_field_shapes.budget.number,4);
+ assert.equal(r.diagnostics.detail_probes[1].field_shapes.escrow,"string");assert.equal(r.diagnostics.detail_probes[1].qualified,false);
+ assert.ok(!JSON.stringify(r).includes("FICTIONAL_PRIVATE"));assert.ok(!JSON.stringify(f.writes).includes("FICTIONAL_PRIVATE"))
+});
+test("optional escrow is explicit and preserves currency, budget, status, simulation and contradiction gates",()=>{
+ const x=row(1,"unfunded",2500);
+ assert.equal(qualifyTask(x,"1",2000).eligible,false);
+ const q=qualifyTask(x,"1",2000,true);assert.equal(q.eligible,true);assert.equal(q.funding_assessment,"unverified_or_unfunded");assert.equal(q.payment_guaranteed,false);
+ for(const invalid of [{...x,currency:"EUR"},{...x,budget_cents:undefined},{...x,status:"closed"},{...x,simulated:true},{...x,escrow_status:"refunded"},{...x,escrow_status:"held",funded:false}]){
+  assert.equal(qualifyTask(invalid,"1",2000,true).eligible,false)
+ }
+ assert.equal(qualifyTask(x,"1",2501,true).eligible,false);
+ assert.equal(qualifyTask(x,"1",1999,true).eligible,false);
+ assert.equal(needsDetail(x),true);
 });
