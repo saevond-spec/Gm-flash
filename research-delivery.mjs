@@ -1,3 +1,4 @@
+import { corroboratePopulation } from "./source-corroboration.mjs";
 // Independent Sprite public research engine. Only fixed World Bank API endpoints.
 // No AI conclusions, arbitrary URLs, marketplace credentials, customer input, or Star access.
 const COUNTRIES=new Set(["USA","CAN","GBR","DEU","FRA","JPN","AUS","IND","BRA","MEX","KOR","IDN"]);
@@ -30,6 +31,7 @@ export async function buildResearch(body,fetcher=fetch){
     const available=observations.filter(o=>o.value!==null).sort((a,b)=>b.value-a.value || a.country.localeCompare(b.country));
     const source={publisher:"World Bank, World Development Indicators (source 2)",url,indicator,indicator_label:INDICATORS[indicator],retrieved_at:new Date().toISOString(),sha256:await sha(raw),byte_size:n,source_updated:data[0]?.lastupdated??null};
     const report={source,observations,comparison:{available:available.length,requested:countries.length,highest:available[0]??null,lowest:available.at(-1)??null,spread:available.length>=2?available[0].value-available.at(-1).value:null},limitations:["Single public source, not independently corroborated.","Same indicator and year only; missing observations are not imputed.","Current-dollar GDP measures are nominal, not purchasing-power adjusted; economic indicators alone do not establish commercial demand."],marketplace_submission:false};
+    report.corroboration=corroboratePopulation(report);
     const csv="country,year,indicator,value\r\n"+observations.map(o=>[o.country,o.year,indicator,o.value===null?"":o.value].join(",")).join("\r\n")+"\r\n";
     return {report,csv,source_json:new TextDecoder().decode(raw),csv_sha256:await sha(enc.encode(csv)),retrieval_ms:Date.now()-start};
   }finally{clearTimeout(timer)}
