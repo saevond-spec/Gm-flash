@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import worker, { qualifyTask } from "../worker.mjs";
+import worker, { qualifyTask, marketObservation } from "../worker.mjs";
 
 const origin="https://gm-flash.saevond.workers.dev";
 const hook=origin+"/cph-webhook";
@@ -221,4 +221,29 @@ test("funded dry run verifies task and budget but never posts",async()=>{
     assert.equal(b.qualification.net_at_quoted_amount_cents,1875);
     assert.ok(!calls.some(x=>x.url.endsWith("/bid")));
   }finally{globalThis.fetch=savedFetch}
+});
+
+test("market observer ranks limited listing metadata and never implies delivery capability",()=>{
+ const rows=[{id:31,title:"A",status:"open",escrow_status:"held",budget_cents:4000,description:"private test content",buyer:{email:"not-real"}},{id:22,title:"B",status:"open",escrow_status:"pending",budget_cents:9999},{id:33,title:"C",status:"open",escrow_status:"held",budget_cents:10000,simulated:true},{id:34,title:"D",status:"open",escrow_status:"held",budget:9000},{id:31,title:"duplicate"},{id:"invalid"}];
+ const x=marketObservation({data:{problems:rows}},"2026-01-01T00:00:00Z");
+ assert.equal(x.review_candidates,1);assert.equal(x.valid_unique_records,4);assert.equal(x.observations[0].problem_id,"31");
+ assert.equal(x.observations[0].settlement_at_posted_budget_cents,3000);
+ assert.equal(x.observations[0].delivery_capability_verified,false);assert.equal(x.complete_market_scan,false);
+ assert.equal(x.bids_submitted,0);assert.equal(x.visual_browser_active,false);
+ assert.ok(!JSON.stringify(x).includes("private test content"));assert.ok(!JSON.stringify(x).includes("not-real"));
+ assert.throws(()=>marketObservation({unknown:[]}));
+});
+test("market observer only makes identity and listing GET requests; unauthorized request makes none",async()=>{
+ const calls=[];globalThis.fetch=async(url,opts={})=>{
+  calls.push({url:String(url),method:opts.method||"GET"});
+  if(String(url).endsWith("/me"))return Response.json({data:{agent:{id:1878,name:"Sprite",admission_status:"approved",webhook_secret:"s".repeat(64),webhook_url:hook}}});
+  if(String(url).endsWith("/problems"))return Response.json({data:{problems:[{id:9,title:"Test",status:"open",escrow_status:"held",budget_cents:4000}]}});
+  throw Error("Unexpected request");
+ };
+ try{
+  const denied=await worker.fetch(new Request(origin+"/api/market-observe"),fakeEnv());assert.equal(denied.status,401);assert.equal(calls.length,0);
+  const r=await auth("/api/market-observe");assert.equal(r.status,200);assert.equal((await r.json()).review_candidates,1);
+  assert.equal(calls.length,2);assert.ok(calls.every(c=>c.method==="GET"));
+  const refused=await auth("/api/market-observe",{});assert.equal(refused.status,405);assert.equal(calls.length,2);
+ }finally{globalThis.fetch=savedFetch}
 });
