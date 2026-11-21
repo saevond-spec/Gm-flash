@@ -78,6 +78,31 @@ export function autonomousAmountAllowed(cents){
  return Number.isSafeInteger(cents)&&cents>=AUTONOMOUS_BID_POLICY.min_bid_cents&&cents<=AUTONOMOUS_BID_POLICY.max_bid_cents;
 }
 // Conservative qualification. Unknown fields are not proof of escrow.
+export function normalizePostingBudget(task) {
+ if(!task||typeof task!=="object")return {cents:null,state:"missing"};
+ const has=k=>Object.hasOwn(task,k)&&task[k]!==null&&task[k]!==undefined;
+ const keys=["budget_cents","posting_budget_cents","budget_usd","posting_budget_usd"];
+ if(!keys.some(has))return {cents:null,state:"missing"};
+ if(has("currency")&&(typeof task.currency!=="string"||task.currency.trim().toUpperCase()!=="USD"))return {cents:null,state:"unsupported_currency"};
+ const values=[];
+ for(const key of keys){
+  if(!has(key))continue;
+  const v=task[key];
+  let cents=null;
+  if(key.endsWith("_cents")){
+   if(Number.isSafeInteger(v)&&v>0)cents=v;
+   else if(typeof v==="string"&&/^[1-9]\d{0,11}$/.test(v)&&Number.isSafeInteger(Number(v)))cents=Number(v);
+  }else{
+   const str=typeof v==="string"?v:typeof v==="number"&&Number.isFinite(v)?String(v):"";
+   const m=/^(0|[1-9]\d{0,9})(?:\.(\d{1,2}))?$/.exec(str);
+   if(m){const n=Number(m[1])*100+Number((m[2]||"").padEnd(2,"0"));if(Number.isSafeInteger(n)&&n>0)cents=n;}
+  }
+  if(cents===null)return {cents:null,state:"invalid_explicit_budget"};
+  values.push(cents);
+ }
+ if(new Set(values).size!==1)return {cents:null,state:"conflicting_budget"};
+ return {cents:values[0],state:has("currency")||keys.slice(2).some(has)?"explicit_usd":"explicit_cents_currency_unknown"};
+}
 export function qualifyTask(task, id, amountCents=null, allowUnescrowed=false) {
   const norm=x=>typeof x==="string"?x.trim().toLowerCase():"";
   const statusRaw=norm(task?.status),escrowRaw=norm(task?.escrow_status);
@@ -90,7 +115,8 @@ export function qualifyTask(task, id, amountCents=null, allowUnescrowed=false) {
   if(knownId===undefined||String(knownId)!==String(id))reasons.push("task_identity_unverified");
   if(!["open","bidding"].includes(status))reasons.push("task_not_open_or_status_unknown");
   if(simulated)reasons.push("simulated_bounty");
-  const budget=Number.isSafeInteger(task?.budget_cents)&&task.budget_cents>0?task.budget_cents:null;
+  const normalizedBudget=normalizePostingBudget(task);
+  const budget=normalizedBudget.cents;
   const held=escrow==="held"&&!flags.includes(false);
   // Opt-in permits advertised USD compensation only; never represents it as funded.
   const optional=allowUnescrowed===true&&["","pending","unfunded","none","funded"].includes(escrow)&&
@@ -99,7 +125,7 @@ export function qualifyTask(task, id, amountCents=null, allowUnescrowed=false) {
     (amountCents===null||autonomousAmountAllowed(amountCents));
   if(!held&&!optional)reasons.push("escrow_not_confirmed_held");
   if(amountCents!==null && (budget===null || amountCents>budget))reasons.push(budget===null?"budget_cents_unverified":"bid_above_budget");
-  return {problem_id:String(id),status:status||null,escrow_status:escrow||null,simulated_flag:simulated,budget_cents:budget,
+  return {problem_id:String(id),status:status||null,escrow_status:escrow||null,simulated_flag:simulated,budget_cents:budget,budget_evidence_state:normalizedBudget.state,
     funding_assessment:held&&!simulated?"funding_indicated":"unverified_or_unfunded",
     non_escrow_review_allowed:optional&&!simulated, payment_guaranteed:false,
     eligible:reasons.length===0,reasons,fee_assumption_percent:25,
@@ -114,7 +140,7 @@ export function safeMarketCategory(value){
 // Fixed schema-presence diagnostics; no upstream text, arbitrary field names or values are retained.
 export function fundingFieldShape(task){
  const out={};
- for(const k of ["budget_cents","budget","budget_usd","amount_cents","bounty","bounty_cents","reward","reward_cents","currency","escrow_status","escrow","funded","is_funded","funding_status","payment_status","posting_budget","posting_budget_cents","held_amount","held_amount_cents","escrow_amount","escrow_amount_cents","budget_hold","budget_held","is_budget_held"]){
+ for(const k of ["budget_cents","budget","budget_usd","amount_cents","bounty","bounty_cents","reward","reward_cents","currency","escrow_status","escrow","funded","is_funded","funding_status","payment_status","posting_budget","posting_budget_cents","posting_budget_usd","held_amount","held_amount_cents","escrow_amount","escrow_amount_cents","budget_hold","budget_held","is_budget_held"]){
   if(!task||!Object.hasOwn(task,k))continue;
   const v=task[k];out[k]=v===null?"null":Array.isArray(v)?"array":typeof v;
  }
