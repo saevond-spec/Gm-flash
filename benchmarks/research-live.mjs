@@ -12,5 +12,12 @@ try{
  assert.equal(data.report.comparison.spread,values[0]-values.at(-1));
  assert.equal(data.report.source.sha256,createHash("sha256").update(data.source_json).digest("hex"));
  assert.equal(data.csv_sha256,createHash("sha256").update(data.csv).digest("hex"));
+ const secondary=data.report.live_secondary;
+ if(secondary?.status==="retrieved"){
+  assert.equal(secondary.sha256,createHash("sha256").update(secondary.source_json).digest("hex"));
+  assert.equal(secondary.delta_persons,direct.get("CAN")-secondary.value);
+  assert.equal(secondary.absolute_relative_difference,Math.abs(secondary.delta_persons)/secondary.value);
+  console.log("LIVE_SECONDARY_RESULT",JSON.stringify({pass:true,publisher:secondary.publisher,value:secondary.value,reference_date:secondary.reference_date,release_time:secondary.release_time,sha256:secondary.sha256,delta_persons:secondary.delta_persons,absolute_relative_difference:secondary.absolute_relative_difference,source_independence_verified:false}));
+ }else console.log("LIVE_SECONDARY_RESULT",JSON.stringify({pass:false,status:secondary?.status??"not_run",reason:secondary?.reason??null}));
  console.log("LIVE_RESEARCH_RESULT",JSON.stringify({pass:true,source:data.report.source,observations:data.report.observations,comparison:data.report.comparison,csv_sha256:data.csv_sha256,ms:data.retrieval_ms,independent_source_corroboration:false,marketplace_submission:false}));
 }catch(e){console.log("LIVE_RESEARCH_RESULT",JSON.stringify({pass:false,error:String(e.message).slice(0,250)}));}
