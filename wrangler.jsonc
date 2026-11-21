@@ -1,0 +1,10 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "gm-flash",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-11-18",
+  "workers_dev": true,
+  "ai": {
+    "binding": "AI"
+  }
+}
