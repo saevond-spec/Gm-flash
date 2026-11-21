@@ -119,7 +119,7 @@ export function qualifyTask(task, id, amountCents=null, allowUnescrowed=false) {
   const budget=normalizedBudget.cents;
   const held=escrow==="held"&&!flags.includes(false);
   // Opt-in permits advertised USD compensation only; never represents it as funded.
-  const optional=allowUnescrowed===true&&["","pending","unfunded","none","funded"].includes(escrow)&&
+  const optional=allowUnescrowed===true&&["","pending","unfunded","none","funded"].includes(escrowRaw)&&!(flags.includes(true)&&flags.includes(false))&&
     typeof task?.currency==="string"&&task.currency.toUpperCase()==="USD"&&
     budget!==null&&autonomousAmountAllowed(budget)&&
     (amountCents===null||autonomousAmountAllowed(amountCents));
@@ -131,6 +131,24 @@ export function qualifyTask(task, id, amountCents=null, allowUnescrowed=false) {
     eligible:reasons.length===0,reasons,fee_assumption_percent:25,
     net_at_quoted_amount_cents:amountCents===null?null:Math.floor(amountCents*75/100),
     delivery_capability_verified:false};
+}
+
+// GET-only review stages; never grant submission permission or persist buyer text.
+export function qualificationReview(task, assessment) {
+ const norm=v=>typeof v==="string"?v.trim().toLowerCase():"";
+ const reasons=new Set(assessment?.reasons??[]);
+ const currency=norm(task?.currency);
+ const escrow=norm(task?.escrow_status);
+ const flags=[task?.funded,task?.is_funded];
+ if(reasons.has("task_identity_unverified")||reasons.has("task_not_open_or_status_unknown")||assessment?.simulated_flag===true||reasons.has("simulated_bounty"))return "rejected_identity_status_or_simulation";
+ if(currency!=="usd")return "currency_review";
+ if(!["","held","pending","none","unfunded","funded"].includes(escrow)||flags.includes(true)&&flags.includes(false)||escrow==="held"&&flags.includes(false))return "rejected_funding_conflict";
+ if(assessment?.budget_evidence_state==="conflicting_budget"||assessment?.budget_evidence_state==="invalid_explicit_budget"||assessment?.budget_evidence_state==="unsupported_currency")return "rejected_price_conflict";
+ const amount=assessment?.budget_cents;
+ if(amount===null||amount===undefined)return "price_review";
+ if(!Number.isSafeInteger(amount)||amount<2000||amount>10000000)return "outside_quote_policy";
+ if(assessment?.eligible!==true)return "qualification_review";
+ return "scope_and_readiness_review";
 }
 
 export function safeMarketCategory(value){
@@ -180,7 +198,7 @@ export function needsDetail(x){
 export async function runScheduledScan(env) {
  if(!env.BID_LEDGER)throw Error("Scan ledger unavailable");
  let outcome="unavailable", examined=0, candidates=[];
- const diagnostics={pages_requested:0,pages_with_new_ids:0,unique_records:0,duplicate_records:0,second_page_probe:"not_needed",rejections:{},listing_funding_field_shapes:{},detail_probes:[],public_discovery:[],scanner_revision:"detail-discovery-v3",complete_market_scan:false};
+ const diagnostics={pages_requested:0,pages_with_new_ids:0,unique_records:0,duplicate_records:0,second_page_probe:"not_needed",rejections:{},listing_funding_field_shapes:{},detail_probes:[],public_discovery:[],scanner_revision:"detail-discovery-v4-qualification",complete_market_scan:false};
  const seen=new Set(), eligible=new Set(), nonEscrow=new Set(), ambiguous=[], publicAmbiguous=[];
  const ingest=(observation,publicOnly=false)=>{
   examined+=observation.records_examined;
@@ -244,10 +262,11 @@ export async function runScheduledScan(env) {
     const data=await loadJson("/"+id);
     const task=data?.data?.problem??data?.problem??data?.data??data;
     const q=qualifyTask(task,id);
-    const qualified=q.eligible&&autonomousAmountAllowed(q.budget_cents);
     const optional=qualifyTask(task,id,null,true);
-    const nonEscrowQualified=!qualified&&optional.eligible&&optional.non_escrow_review_allowed&&autonomousAmountAllowed(optional.budget_cents);
-    diagnostics.detail_probes.push({problem_id:id,field_shapes:fundingFieldShape(task),verified_budget_cents:q.budget_cents,escrow_status:q.escrow_status,status:q.status,qualified,non_escrow_qualified:nonEscrowQualified,reasons:q.reasons});
+    const reviewStage=qualificationReview(task,optional);
+    const qualified=reviewStage==="scope_and_readiness_review"&&q.eligible&&autonomousAmountAllowed(q.budget_cents);
+    const nonEscrowQualified=reviewStage==="scope_and_readiness_review"&&!qualified&&optional.eligible&&optional.non_escrow_review_allowed&&autonomousAmountAllowed(optional.budget_cents);
+    diagnostics.detail_probes.push({problem_id:id,field_shapes:fundingFieldShape(task),verified_budget_cents:q.budget_cents,escrow_status:q.escrow_status,status:q.status,qualified,non_escrow_qualified:nonEscrowQualified,qualification_stage:reviewStage,budget_evidence_state:optional.budget_evidence_state,reasons:q.reasons});
     if(qualified)eligible.add(id);
     if(nonEscrowQualified)nonEscrow.add(id);
    }catch{diagnostics.detail_probes.push({problem_id:id,unavailable:true})}
@@ -255,6 +274,9 @@ export async function runScheduledScan(env) {
   candidates=Array.from(eligible).slice(0,50);
   diagnostics.non_escrow_candidate_ids=Array.from(nonEscrow).slice(0,50);
   diagnostics.non_escrow_candidates=diagnostics.non_escrow_candidate_ids.length;
+  diagnostics.price_review_ids=diagnostics.detail_probes.filter(x=>x.qualification_stage==="price_review").map(x=>x.problem_id);
+  diagnostics.qualification_stage_counts={};
+  for(const p of diagnostics.detail_probes){const stage=p.qualification_stage??"detail_unavailable";diagnostics.qualification_stage_counts[stage]=(diagnostics.qualification_stage_counts[stage]??0)+1;}
  }catch{outcome="unavailable";}
  const record={observed_at:new Date().toISOString(),outcome,records_examined:examined,funded_candidates:candidates.length,candidate_ids:candidates,bids_submitted:0,diagnostics};
  await env.BID_LEDGER.prepare("INSERT INTO scan_status (id,observed_at,outcome,records_examined,funded_candidates,candidate_ids,bids_submitted,diagnostics_json) VALUES (1,?,?,?,?,?,0,?) ON CONFLICT(id) DO UPDATE SET observed_at=excluded.observed_at,outcome=excluded.outcome,records_examined=excluded.records_examined,funded_candidates=excluded.funded_candidates,candidate_ids=excluded.candidate_ids,bids_submitted=0,diagnostics_json=excluded.diagnostics_json").bind(record.observed_at,outcome,examined,candidates.length,JSON.stringify(candidates),JSON.stringify(diagnostics)).run();
