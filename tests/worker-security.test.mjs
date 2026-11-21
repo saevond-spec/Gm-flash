@@ -122,3 +122,26 @@ test("different agent identity refuses bid dry run",async()=>{
     assert.ok(!calls.some(x=>x.url.includes("/bid")));
   }finally{globalThis.fetch=savedFetch}
 });
+
+
+test("model returns usable OpenAI-compatible proposal without submitting bid",async()=>{
+  const env=fakeEnv();
+  let requestedTokens=0,modelCalls=0;
+  env.AI={run:async(model,args)=>{
+    modelCalls++;requestedTokens=args.max_tokens;
+    return {choices:[{message:{content:"Research the public task, implement a limited solution, and validate with tests."},finish_reason:"stop"}]};
+  }};
+  const r=await auth("/api/draft",{task:"Analyze a public coding problem and propose a measurable plan without customer files."},env);
+  const body=await r.json();
+  assert.equal(r.status,200);assert.equal(body.posted,false);
+  assert.equal(body.review_required,true);assert.match(body.draft,/validate with tests/);
+  assert.equal(requestedTokens,1600);assert.equal(modelCalls,1);
+});
+test("model reasoning-only response fails closed without fake success",async()=>{
+  const env=fakeEnv();
+  env.AI={run:async()=>({choices:[{message:{content:null,reasoning:"Private reasoning not a proposal."},finish_reason:"length"}]})};
+  const r=await auth("/api/draft",{task:"Review a public work request and generate a trustworthy proposal for the operator."},env);
+  const body=await r.json();
+  assert.equal(r.status,503);assert.equal(body.model_finish_reason,"length");
+  assert.equal(body.draft,undefined);
+});
