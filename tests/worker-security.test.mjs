@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import worker from "../worker.mjs";
+import worker, { qualifyTask } from "../worker.mjs";
 
 const origin="https://gm-flash.saevond.workers.dev";
 const hook=origin+"/cph-webhook";
@@ -171,5 +171,54 @@ test("visual probe refuses arbitrary image URL",async()=>{
   try{
     const r=await hookCall({event_type:"capability_probe",probe_type:"visual_observation",probe_id:"blocked-image",payload:{image_url:"https://example.org/private.png"}});
     assert.equal((await r.json()).status,"error");
+  }finally{globalThis.fetch=savedFetch}
+});
+
+
+const fundedFixture=Object.freeze({id:123,status:"bidding",escrow_status:"held",funded:true,budget_cents:5000});
+test("eligible held escrow fixture and exact net quote arithmetic",()=>{
+  const a=qualifyTask(fundedFixture,"123",5000);
+  assert.equal(a.eligible,true);
+  assert.equal(a.net_at_quoted_amount_cents,3750);
+  assert.equal(a.delivery_capability_verified,false);
+});
+test("conservative qualification rejects missing or contradictory escrow",()=>{
+  for(const patch of [{escrow_status:undefined},{escrow_status:"pending"},{funded:false},{is_funded:false},{is_simulated:true},{simulated:true},{bounty_type:"simulated"},{id:456},{id:undefined},{status:"assigned"},{status:undefined},{budget_cents:undefined},{budget_cents:4999}]){
+    assert.equal(qualifyTask({...fundedFixture,...patch},"123",5000).eligible,false,JSON.stringify(patch));
+  }
+});
+test("exhaustive funding/status/simulation/budget matrix rejects unsafe combinations",()=>{
+  let cases=0;
+  for(const escrow_status of ["held","pending","released",undefined])
+  for(const status of ["open","bidding","assigned",undefined])
+  for(const funded of [true,false,undefined])
+  for(const is_simulated of [true,false])
+  for(const budget_cents of [4999,5000,6000,undefined]){
+    const task={id:123,escrow_status,status,funded,is_simulated,budget_cents};
+    const expected=escrow_status==="held" && ["open","bidding"].includes(status) && funded!==false && is_simulated===false && [5000,6000].includes(budget_cents);
+    assert.equal(qualifyTask(task,"123",5000).eligible,expected,JSON.stringify(task));
+    cases++;
+  }
+  assert.equal(cases,384);
+  console.log("FUNDING_MATRIX_CASES",cases);
+});
+test("confirmed bid request for unfunded fixture never reaches marketplace bid endpoint",async()=>{
+  const calls=mockClawhunt(true,{...fundedFixture,escrow_status:"pending"});
+  try{
+    const r=await auth("/api/bid",{problem_id:"123",amount_cents:5000,message:"A valid but unfunded fixture plan",confirm:"PLACE_BID"});
+    assert.equal(r.status,409);
+    assert.equal((await r.json()).bid_sent,false);
+    assert.ok(!calls.some(x=>x.url.endsWith("/bid")));
+  }finally{globalThis.fetch=savedFetch}
+});
+test("funded dry run verifies task and budget but never posts",async()=>{
+  const calls=mockClawhunt(true,fundedFixture);
+  try{
+    const r=await auth("/api/bid-dry-run",{problem_id:"123",amount_cents:2500,message:"Safe fixture delivery plan"});
+    const b=await r.json();assert.equal(r.status,200);
+    assert.equal(b.qualification.eligible,true);
+    assert.equal(b.task_funding_checked,true);
+    assert.equal(b.qualification.net_at_quoted_amount_cents,1875);
+    assert.ok(!calls.some(x=>x.url.endsWith("/bid")));
   }finally{globalThis.fetch=savedFetch}
 });
