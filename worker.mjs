@@ -140,14 +140,16 @@ const PAGE = "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><meta nam
 
 // Only selected scalar metadata is retained. Page probes are read-only and must demonstrate new IDs.
 export function needsDetail(x){
- return ["open","bidding"].includes(x.status)&&!x.simulated_flag&&
-  !["unfunded","none","released","refunded","cancelled","failed","disputed"].includes(x.escrow_status)&&
-  !((x.budget_cents!==null)&&(!Number.isSafeInteger(x.budget_cents)||x.budget_cents<2000||x.budget_cents>10000000));
+ // This is a GET-only diagnostic gate, never a bid or funding approval.
+ // Missing/unknown status and pre-selection escrow "none" merit a detail check.
+ return (x.status===null||["open","bidding"].includes(x.status))&&!x.simulated_flag&&
+  !["released","refunded","cancelled","failed","disputed"].includes(x.escrow_status)&&
+  !(x.budget_cents!==null&&(!Number.isSafeInteger(x.budget_cents)||x.budget_cents<2000||x.budget_cents>10000000));
 }
 export async function runScheduledScan(env) {
  if(!env.BID_LEDGER)throw Error("Scan ledger unavailable");
  let outcome="unavailable", examined=0, candidates=[];
- const diagnostics={pages_requested:0,pages_with_new_ids:0,unique_records:0,duplicate_records:0,second_page_probe:"not_needed",rejections:{},listing_funding_field_shapes:{},detail_probes:[],public_discovery:[],scanner_revision:"detail-discovery-v2",complete_market_scan:false};
+ const diagnostics={pages_requested:0,pages_with_new_ids:0,unique_records:0,duplicate_records:0,second_page_probe:"not_needed",rejections:{},listing_funding_field_shapes:{},detail_probes:[],public_discovery:[],scanner_revision:"detail-discovery-v3",complete_market_scan:false};
  const seen=new Set(), eligible=new Set(), ambiguous=[];
  const ingest=observation=>{
   examined+=observation.records_examined;
@@ -159,7 +161,7 @@ export async function runScheduledScan(env) {
    const reasons=new Set(x.reasons);
    if(x.budget_cents!==null&&!autonomousAmountAllowed(x.budget_cents))reasons.add(x.budget_cents<2000?"below_authorized_minimum":"above_authorized_maximum");
    for(const reason of reasons)diagnostics.rejections[reason]=(diagnostics.rejections[reason]||0)+1;
-   if(needsDetail({...x,simulated_flag:x.reasons.includes("simulated_bounty")})&&ambiguous.length<10)ambiguous.push(x.problem_id);
+   if(needsDetail({...x,simulated_flag:x.reasons.includes("simulated_bounty")})&&ambiguous.length<250)ambiguous.push(x.problem_id);
   }
   if(fresh>0)diagnostics.pages_with_new_ids++;
   diagnostics.unique_records=seen.size;
@@ -204,7 +206,10 @@ export async function runScheduledScan(env) {
   }
   // Diagnose missing list fields using a bounded number of authenticated detail GETs.
   // Types alone never establish money units or funding; no speculative unit conversion.
-  for(const id of ambiguous){
+  const start=ambiguous.length?((Math.floor(Date.now()/900000)*10)%ambiguous.length):0;
+  const probeIds=ambiguous.slice(start).concat(ambiguous.slice(0,start)).slice(0,10);
+  diagnostics.detail_queue_size=ambiguous.length;
+  for(const id of probeIds){
    try{
     const data=await loadJson("/"+id);
     const task=data?.data?.problem??data?.problem??data?.data??data;
