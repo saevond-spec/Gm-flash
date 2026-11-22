@@ -5,7 +5,7 @@ export function nextMarketplaceAction(e){
  if(e.deliveryAccepted===true)return "track_settlement";
  if(e.deliverySubmitted===true)return "monitor_review";
  if(e.submissionUncertain===true||e.bidUncertain===true||e.claimUncertain===true||e.acceptUncertain===true)return "reconcile_receipt";
- const eligible=e.open===true&&e.paidUsd===true&&e.scopeVerified===true&&e.isolatedEnvironmentVerified===true&&e.costCents===0&&Number.isSafeInteger(e.quoteCents)&&e.quoteCents>=2000&&Number.isSafeInteger(e.platformLimitCents)&&e.quoteCents<=e.platformLimitCents;
+ const eligible=e.open===true&&e.paidUsd===true&&e.scopeVerified===true&&e.isolatedEnvironmentVerified===true&&e.costCents===0&&Number.isSafeInteger(e.quoteCents)&&e.quoteCents>=500&&Number.isSafeInteger(e.platformLimitCents)&&e.quoteCents<=e.platformLimitCents;
  if(e.assignedToSprite===true){
   if(e.fundingVerified!==true||e.scopeVerified!==true||e.isolatedEnvironmentVerified!==true||e.costCents!==0)return "verify_assignment";
   if(e.assignmentAcceptanceRequired===true&&e.assignmentAccepted!==true)return e.acceptContractVerified===true?"accept_assignment":"verify_accept_contract";
