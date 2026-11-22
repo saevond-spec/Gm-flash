@@ -40,7 +40,7 @@ const cases=[
       "scopeVerified": true,
       "isolatedEnvironmentVerified": true,
       "costCents": 0,
-      "quoteCents": 1999,
+      "quoteCents": 499,
       "platformLimitCents": 100000
     },
     "browse_and_qualify"
@@ -261,4 +261,5 @@ const cases=[
     "track_settlement"
   ]
 ];
+cases.push([{identityVerified:true,open:true,paidUsd:true,scopeVerified:true,isolatedEnvironmentVerified:true,costCents:0,quoteCents:500,platformLimitCents:100000},"bid"]);
 for(const [i,[input,expected]] of cases.entries())test("lifecycle case "+(i+1)+" "+expected,()=>assert.equal(nextMarketplaceAction(input),expected));
