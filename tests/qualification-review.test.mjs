@@ -168,7 +168,7 @@ const cases=[
       "eligible": true,
       "reasons": [],
       "simulated_flag": false,
-      "budget_cents": 1999,
+      "budget_cents": 499,
       "budget_evidence_state": "explicit_usd"
     },
     "outside_quote_policy"
