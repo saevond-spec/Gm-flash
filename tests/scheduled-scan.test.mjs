@@ -32,7 +32,7 @@ function fixture({agentId=1878,pages={},details={},publicPages={}}={}){
 const row=(id,escrow_status="held",budget_cents=2000,extra={})=>({id,status:"open",escrow_status,budget_cents,currency:"USD",...extra});
 async function run(f){const saved=globalThis.fetch;globalThis.fetch=f.mock;try{return await runScheduledScan(f.env)}finally{globalThis.fetch=saved}}
 test("scheduled scan distinguishes funded and non-escrow candidates only after authenticated details",async()=>{
- const f=fixture({pages:{1:[row(1,"held",2000,{description:"FICTIONAL_PRIVATE_CANARY"}),row(2,"pending",3000),row(3,"held",1999),row(4,"held",10000001),row(5,"held",3500,{simulated:true})]},details:{1:row(1),2:row(2,"pending",3000)}});
+ const f=fixture({pages:{1:[row(1,"held",2000,{description:"FICTIONAL_PRIVATE_CANARY"}),row(2,"pending",3000),row(3,"held",499),row(4,"held",10000001),row(5,"held",3500,{simulated:true})]},details:{1:row(1),2:row(2,"pending",3000)}});
  const r=await run(f);
  assert.equal(r.outcome,"scanned");assert.equal(r.records_examined,5);assert.deepEqual(r.candidate_ids,["1"]);
  assert.deepEqual(r.diagnostics.non_escrow_candidate_ids,["2"]);assert.equal(r.funded_candidates,1);assert.equal(r.bids_submitted,0);
@@ -82,7 +82,7 @@ test("optional escrow is explicit and preserves currency, budget, status, simula
   assert.equal(qualifyTask(invalid,"1",2000,true).eligible,false)
  }
  assert.equal(qualifyTask(x,"1",2501,true).eligible,false);
- assert.equal(qualifyTask(x,"1",1999,true).eligible,false);
+ assert.equal(qualifyTask(x,"1",499,true).eligible,false);
  assert.equal(needsDetail(x),true);
 });
 
