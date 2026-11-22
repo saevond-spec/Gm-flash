@@ -73,7 +73,7 @@ function validBid(b) {
 
 
 // Operator-authorized autonomy envelope; does not grant spending or start submission.
-export const AUTONOMOUS_BID_POLICY=Object.freeze({operator_authorized:true,authorization_date:"2026-11-21",currency:"USD",min_bid_cents:2000,max_bid_cents:10000000,additional_spending_cents:0,require_held_escrow:false,require_verified_task_scope:true,require_isolated_delivery_environment:true,require_durable_duplicate_prevention:true,require_verified_platform_limit:true,automatic_submission_enabled:false});
+export const AUTONOMOUS_BID_POLICY=Object.freeze({operator_authorized:true,authorization_date:"2026-11-21",currency:"USD",min_bid_cents:500,max_bid_cents:10000000,additional_spending_cents:0,require_held_escrow:false,require_verified_task_scope:true,require_isolated_delivery_environment:true,require_durable_duplicate_prevention:true,require_verified_platform_limit:true,automatic_submission_enabled:false});
 export function autonomousAmountAllowed(cents){
  return Number.isSafeInteger(cents)&&cents>=AUTONOMOUS_BID_POLICY.min_bid_cents&&cents<=AUTONOMOUS_BID_POLICY.max_bid_cents;
 }
@@ -146,7 +146,7 @@ export function qualificationReview(task, assessment) {
  if(assessment?.budget_evidence_state==="conflicting_budget"||assessment?.budget_evidence_state==="invalid_explicit_budget"||assessment?.budget_evidence_state==="unsupported_currency")return "rejected_price_conflict";
  const amount=assessment?.budget_cents;
  if(amount===null||amount===undefined)return "price_review";
- if(!Number.isSafeInteger(amount)||amount<2000||amount>10000000)return "outside_quote_policy";
+ if(!Number.isSafeInteger(amount)||amount<500||amount>10000000)return "outside_quote_policy";
  if(assessment?.eligible!==true)return "qualification_review";
  return "scope_and_readiness_review";
 }
@@ -226,7 +226,7 @@ export function rankDetailProbes(ids,history=[],reviews=[],now=Date.now(),limit=
 export function needsDetail(x){
  return (x.status===null||["open","bidding"].includes(x.status))&&!x.simulated_flag&&
   !["released","refunded","cancelled","failed","disputed"].includes(x.escrow_status)&&
-  !((x.budget_cents!==null)&&(!Number.isSafeInteger(x.budget_cents)||x.budget_cents<2000||x.budget_cents>10000000));
+  !((x.budget_cents!==null)&&(!Number.isSafeInteger(x.budget_cents)||x.budget_cents<500||x.budget_cents>10000000));
 }
 export async function runScheduledScan(env) {
  if(!env.BID_LEDGER)throw Error("Scan ledger unavailable");
@@ -242,7 +242,7 @@ export async function runScheduledScan(env) {
    if(seen.has(x.problem_id)){diagnostics.duplicate_records++;continue}
    seen.add(x.problem_id);fresh++;
    const reasons=new Set(x.reasons);
-   if(x.budget_cents!==null&&!autonomousAmountAllowed(x.budget_cents))reasons.add(x.budget_cents<2000?"below_authorized_minimum":"above_authorized_maximum");
+   if(x.budget_cents!==null&&!autonomousAmountAllowed(x.budget_cents))reasons.add(x.budget_cents<500?"below_authorized_minimum":"above_authorized_maximum");
    for(const reason of reasons)diagnostics.rejections[reason]=(diagnostics.rejections[reason]||0)+1;
    const pool=publicOnly?publicAmbiguous:ambiguous;
    if(needsDetail({...x,simulated_flag:x.reasons.includes("simulated_bounty")})&&pool.length<125)pool.push(x.problem_id);
