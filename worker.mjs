@@ -115,9 +115,11 @@ export function qualifyTask(task, id, amountCents=null, allowUnescrowed=false) {
   if(knownId===undefined||String(knownId)!==String(id))reasons.push("task_identity_unverified");
   if(!["open","bidding"].includes(status))reasons.push("task_not_open_or_status_unknown");
   if(simulated)reasons.push("simulated_bounty");
+  if(norm(task?.currency)!=="usd")reasons.push("currency_unverified_or_not_usd");
+  if(amountCents!==null&&!autonomousAmountAllowed(amountCents))reasons.push("quote_outside_authorized_range");
   const normalizedBudget=normalizePostingBudget(task);
   const budget=normalizedBudget.cents;
-  const held=escrow==="held"&&!flags.includes(false);
+  const held=escrow==="held"&&!flags.includes(false)&&!simulated&&norm(task?.currency)==="usd";
   // Opt-in permits advertised USD compensation only; never represents it as funded.
   const optional=allowUnescrowed===true&&["","pending","unfunded","none","funded"].includes(escrowRaw)&&!(flags.includes(true)&&flags.includes(false))&&
     typeof task?.currency==="string"&&task.currency.toUpperCase()==="USD"&&
@@ -231,7 +233,7 @@ export function needsDetail(x){
 export async function runScheduledScan(env) {
  if(!env.BID_LEDGER)throw Error("Scan ledger unavailable");
  let outcome="unavailable", examined=0, candidates=[];
- const diagnostics={pages_requested:0,pages_with_new_ids:0,unique_records:0,duplicate_records:0,second_page_probe:"not_needed",rejections:{},listing_funding_field_shapes:{},detail_probes:[],public_discovery:[],scanner_revision:"detail-discovery-v6-adaptive",complete_market_scan:false};
+ const diagnostics={pages_requested:0,pages_with_new_ids:0,unique_records:0,duplicate_records:0,second_page_probe:"not_needed",rejections:{},listing_funding_field_shapes:{},detail_probes:[],public_discovery:[],scanner_revision:"detail-discovery-v6-adaptive-usd",complete_market_scan:false};
  const seen=new Set(), eligible=new Set(), nonEscrow=new Set(), ambiguous=[], publicAmbiguous=[], listingEvidence=new Map();
  const ingest=(observation,publicOnly=false)=>{
   examined+=observation.records_examined;
@@ -284,7 +286,7 @@ export async function runScheduledScan(env) {
    }catch{diagnostics.second_page_probe="unavailable"}
   }
   // Fixed official public discovery route: never send agent credentials, retain only scalar metadata, and never qualify from public data alone.
-  for(const category of ["data","ml-ai","backend"]){
+  for(const category of ["automation","other","data","ml-ai","backend"]){
    try{const ob=marketObservation(await loadJson("?category="+category,true));diagnostics.pages_requested++;const before=seen.size;ingest(ob,true);diagnostics.public_discovery.push({category,new_ids:seen.size-before,status:"observed"});}
    catch{diagnostics.public_discovery.push({category,status:"unavailable"});}
   }
