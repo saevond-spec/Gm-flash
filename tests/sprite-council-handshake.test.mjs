@@ -14,8 +14,10 @@ const approve=(who,i)=>({reviewer:who,decision:'approve',canonical_intent:canoni
 const args=()=>{
  const i=intent();
  return {intent:i,nowSec:now+1,
+  motherService:{reviewBidIntent:async()=>approve('mother',i)},
   novaService:{reviewBidIntent:async()=>approve('nova',i)},
   operatorService:{reviewBidIntent:async()=>approve('chatgpt_operator',i)},
+  verifyMother:async(a,c)=>a.signature===fakeSign('mother',c),
   verifyNova:async(a,c)=>a.signature===fakeSign('nova',c),
   verifyOperator:async(a,c)=>a.signature===fakeSign('chatgpt_operator',c),
   readLedger:async()=>({available:true,blocking_unresolved_bid:false,existing_reservation:false,nonce_seen:false})};
@@ -91,4 +93,17 @@ test('simulated unsigned approval does not qualify',async()=>{
  const x=args();x.novaService.reviewBidIntent=async()=>({...approve('nova',x.intent),signature:undefined});
  const r=await requestSpriteCouncilReview(x);
  assert.equal(r.reason,'nova_intent_binding_invalid');
+});
+
+test('missing Mother service blocks the entire council chain',async()=>{
+ const x=args();x.motherService=null;
+ const r=await requestSpriteCouncilReview(x);
+ assert.equal(r.reason,'independent_approval_services_missing');assert.equal(r.can_submit,false);
+});
+test('Mother HOLD means no Nova review and no operator approval',async()=>{
+ const x=args();let novaCalls=0;
+ x.motherService.reviewBidIntent=async()=>({decision:'hold'});
+ x.novaService.reviewBidIntent=async()=>{novaCalls++;return null};
+ const r=await requestSpriteCouncilReview(x);
+ assert.equal(r.reason,'mother_governance_hold');assert.equal(novaCalls,0);
 });
