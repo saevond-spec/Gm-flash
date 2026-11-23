@@ -10,10 +10,11 @@ const int = (x, lo, hi) => Number.isSafeInteger(x) && x >= lo && x <= hi;
 export function canonicalBidIntent(x) {
   if (!x || x.agent_id !== 1878 || !ID.test(x.problem_id)
       || !int(x.amount_cents, 500, 2000) || !int(x.verified_budget_cents, x.amount_cents, 2000)
+      || !int(x.verified_floor_cents, 0, x.amount_cents)
       || x.currency !== 'USD' || x.incremental_cost_cents !== 0
       || !HASH.test(x.proposal_sha256) || !HASH.test(x.scope_sha256)
       || !NONCE.test(x.nonce) || !int(x.created_at, 1, Number.MAX_SAFE_INTEGER)) return null;
-  return 'sprite-bid-v1|' + [x.agent_id,x.problem_id,x.amount_cents,x.verified_budget_cents,x.currency,x.incremental_cost_cents,x.proposal_sha256,x.scope_sha256,x.nonce,x.created_at].join('|');
+  return 'sprite-bid-v1|' + [x.agent_id,x.problem_id,x.amount_cents,x.verified_budget_cents,x.verified_floor_cents,x.currency,x.incremental_cost_cents,x.proposal_sha256,x.scope_sha256,x.nonce,x.created_at].join('|');
 }
 
 function approvalMatches(a, reviewer, canonical, nowSec, intent) {
