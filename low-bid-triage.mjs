@@ -24,7 +24,7 @@ export function evaluateLowBidCandidate(task, nowMs) {
   if (task.isolated_delivery_verified !== true || task.fictional_rehearsal_passed !== true) reasons.push('delivery_not_verified');
   if (!safeInt(task.estimated_minutes, 15, 240) || task.incremental_cost_cents !== 0) reasons.push('cost_or_hours');
   if (task.prior_bid_checked !== true || task.has_existing_bid !== false || task.has_reservation !== false) reasons.push('prior_bid_unknown');
-  if (task.escrow_status !== 'held' && !(task.allow_unescrowed_review === true && task.escrow_status === 'none')) reasons.push('escrow_status_not_verified');
+  if (!['held','none','unfunded'].includes(task.escrow_status)) reasons.push('escrow_status_not_verified');
   if (task.platform_limit_verified !== true || !safeInt(task.platform_limit_cents, 500, 100_000_000) || task.proposed_quote_cents > task.platform_limit_cents) reasons.push('platform_limit_unknown');
   const ready = reasons.length === 0;
   const netCents = ready ? task.proposed_quote_cents - Math.ceil(task.proposed_quote_cents * 25 / 100) : null;
@@ -36,7 +36,9 @@ export function evaluateLowBidCandidate(task, nowMs) {
     proposed_quote_cents: ready ? task.proposed_quote_cents : null,
     net_if_settled_cents: netCents,
     net_per_hour_cents: score,
-    escrow_risk: task.escrow_status === 'none' ? 'unescrowed' : 'held',
+    escrow_risk: task.escrow_status === 'held' ? 'held' : 'unescrowed',
+    payment_protection: task.escrow_status === 'held' ? 'posting_hold_reported_not_payout_guarantee' : 'unfunded_or_unprotected',
+    delivery_requires_funding_verification: true,
     requires_council_review: true,
     permits_submission: false,
   };
@@ -56,7 +58,7 @@ export function rankLowBidReview(queue, nowMs, limit = 10) {
       task.scope_reviewed,task.acceptance_criteria_verified,task.isolated_delivery_verified,
       task.fictional_rehearsal_passed,task.estimated_minutes,task.incremental_cost_cents,
       task.prior_bid_checked,task.has_existing_bid,task.has_reservation,task.escrow_status,
-      task.allow_unescrowed_review,task.platform_limit_verified,task.platform_limit_cents]);
+      task.platform_limit_verified,task.platform_limit_cents]);
     if (seen.has(result.problem_id)) {
       if (seen.get(result.problem_id) !== fingerprint) conflictingIds.add(result.problem_id);
       continue;
