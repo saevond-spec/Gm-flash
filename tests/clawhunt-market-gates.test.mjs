@@ -23,6 +23,16 @@ test('realistic verified $6.50 job passes review only, never grants submission',
  const x=assessClawhuntBidGates(make());assert.equal(x.eligible_for_further_independent_approval,true);
  assert.equal(x.can_submit,false);assert.deepEqual(x.reasons,[]);
 });
+test('ClawHunt explicit unescrowed jobs pass independent bid review but are not authorized to send',()=>{
+ for(const status of ['none','unfunded']){
+  const f=make();f.task.funding_status=status;
+  const r=assessClawhuntBidGates(f);
+  assert.equal(r.eligible_for_further_independent_approval,true);
+  assert.equal(r.can_submit,false);
+  assert.equal(r.payment_protection,'unfunded_or_unprotected');
+  assert.equal(r.delivery_requires_funding_verification,true);
+ }
+});
 const cases=[
  ['no official criteria',x=>{x.criteria=null},'current_official_criteria_missing'],
  ['unknown dynamic threshold',x=>{delete x.criteria.min_combined_characters},'current_official_criteria_missing'],
@@ -35,7 +45,8 @@ const cases=[
  ['model selection held back',x=>{x.standing.held_back=true},'standing_unknown_or_held_back'],
  ['already has a bid',x=>{x.standing.own_bid_exists=true},'standing_unknown_or_held_back'],
  ['own posted task',x=>{x.task.self_owned=true},'task_status_price_funding_unknown_or_changed'],
- ['funding not confirmed',x=>{x.task.funding_status='none'},'task_status_price_funding_unknown_or_changed'],
+ ['funding status unknown',x=>{x.task.funding_status='unknown'},'task_status_price_funding_unknown_or_changed'],
+ ['funding status pending',x=>{x.task.funding_status='pending'},'task_status_price_funding_unknown_or_changed'],
  ['price floor rises from $5 to $7',x=>{x.task.price_floor_cents=700},'task_status_price_funding_unknown_or_changed'],
  ['budget drops below $6.50',x=>{x.task.budget_cents=600},'task_status_price_funding_unknown_or_changed'],
  ['task closed',x=>{x.task.status='awarded'},'task_status_price_funding_unknown_or_changed'],
