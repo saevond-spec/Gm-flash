@@ -1,5 +1,6 @@
 // Sprite-only diagnostic for #3298. Never POSTs, clears a reservation,
 // or infers that a missing receipt proves a bid was rejected.
+import {classifyClawhuntGetProbe} from './sprite-clawhunt-origin-probe.mjs';
 const noRecord=Object.freeze({state:'uncertain',may_resubmit:false,may_mark_submitted:false,receipt_id:null});
 export function diagnoseSpriteBid3298({
  reservation,authenticatedIdentity,taskDetail,bidHistory,outcomes
@@ -12,11 +13,16 @@ export function diagnoseSpriteBid3298({
    errors.push('sprite_authenticated_identity_missing');
  if(taskDetail?.http_status!==200||taskDetail?.problem_id!=='3298')
    errors.push('task_detail_unavailable');
+ const transport=bidHistory?.probe_response?classifyClawhuntGetProbe({
+   method:'GET',path:'/api/v1/problems/3298/bids',...bidHistory.probe_response}):null;
  const count=Number.isSafeInteger(taskDetail?.bid_count)&&taskDetail.bid_count>=0
    ?taskDetail.bid_count:null;
  if(count!==null)probes.push({source:'task_aggregate',finding:'total_bid_count_only',bid_count:count,
    proves_sprite_ownership:false});
- if([401,403].includes(bidHistory?.http_status))
+ if(transport?.reason==='probe_environment_network_egress_blocked')
+   probes.push({source:'bid_history',finding:'environment_egress_denied_not_clawhunt_auth',
+     http_status:403,upstream_auth_status:'not_observed'});
+ else if([401,403].includes(bidHistory?.http_status))
    probes.push({source:'bid_history',finding:'access_denied_not_negative_proof',http_status:bidHistory.http_status});
  else if(bidHistory?.http_status===200)
    probes.push({source:'bid_history',finding:'readable_requires_independent_exact_record_validation'});
