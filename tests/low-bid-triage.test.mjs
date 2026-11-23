@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { evaluateLowBidCandidate, rankLowBidReview } from '../low-bid-triage.mjs';
 const now=1800000000000;
 const valid=(o={})=>({problem_id:'9951', status:'open',currency:'USD',simulated:false,
- verified_budget_cents:1000, proposed_quote_cents:750, verified_from:'authenticated_detail',
+ verified_budget_cents:1000, proposed_quote_cents:750, verified_floor_cents:500, floor_verified_from:'authenticated_queue', verified_from:'authenticated_detail',
  details_checked_at_ms:now-1000,profile:'csv_cleanup',scope_reviewed:true,acceptance_criteria_verified:true,
  isolated_delivery_verified:true,fictional_rehearsal_passed:true,estimated_minutes:60,incremental_cost_cents:0,
  prior_bid_checked:true,has_existing_bid:false,has_reservation:false,escrow_status:'held',
@@ -17,6 +17,8 @@ for(const [name,attrs,reason] of [
  ['missing price',{verified_budget_cents:null},'budget_unverified_or_out_of_range'],
  ['unknown units',{verified_from:'public_search'},'detail_source_unverified'],
  ['old quote',{details_checked_at_ms:now-900001},'stale_listing'],
+ ['missing floor',{verified_floor_cents:null},'floor_unverified_or_quote_below_floor'],
+ ['below task price floor',{verified_floor_cents:800},'floor_unverified_or_quote_below_floor'],
  ['under $5',{proposed_quote_cents:499},'quote_unverified_or_over_budget'],
  ['more than $20',{verified_budget_cents:2100,proposed_quote_cents:2001},'budget_unverified_or_out_of_range'],
  ['over budget',{proposed_quote_cents:1001},'quote_unverified_or_over_budget'],
