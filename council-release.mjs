@@ -19,7 +19,7 @@ export async function authorizeAndReserveBid({
   if(typeof independentFinalCheck!=='function')return deny('fresh_market_check_missing');
   const initial=await councilBidPreflight({intent,nova,control,verifyNova,verifyControl,readLedger,nowSec});
   if(initial.state!=='preflight_passed_not_released')return deny(initial.reason);
-  if(!ID.test(intent.problem_id)||!int(intent.amount_cents,500,2000)||!canonicalBidIntent(intent))
+  if(!ID.test(intent.problem_id)||intent.problem_id==='3298'||!int(intent.amount_cents,500,2000)||!canonicalBidIntent(intent))
     return deny('invalid_intent');
   try {
     // Must verify live marketplace facts from a trusted GET source, not user JSON:
@@ -31,13 +31,16 @@ export async function authorizeAndReserveBid({
     const insertReservation=db.prepare(
       "INSERT INTO bid_reservations(agent_id,problem_id,amount_cents,state) "+
       "SELECT 1878,?,?,'reserved' WHERE NOT EXISTS "+
-      "(SELECT 1 FROM bid_reservations WHERE agent_id=1878 AND state IN ('reserved','uncertain')) "+
+      // Legacy #3298 stays reserved forever until a separately verified receipt is found.
+      // Only one NEW bid may have an uncertain transport result at a time.\n      "(SELECT 1 FROM bid_reservations WHERE agent_id=1878 AND problem_id<>'3298' AND state IN ('reserved','uncertain')) "+
       "ON CONFLICT(agent_id,problem_id) DO NOTHING RETURNING problem_id"
     ).bind(intent.problem_id,intent.amount_cents);
     // This extra table has a UNIQUE nonce key and must be created by the scoped migration.
     const consumeNonce=db.prepare(
       "INSERT INTO sprite_council_nonce_consumption(nonce,agent_id,problem_id,amount_cents,intent_sha256) "+
-      "VALUES(?,1878,?,?,?) RETURNING nonce"
+      // `changes()` is from the immediately previous INSERT in the D1 transaction.
+      // Prevents consuming a nonce if no reservation was actually inserted.
+      "SELECT ?,1878,?,?,? WHERE changes()=1 RETURNING nonce"
     ).bind(intent.nonce,intent.problem_id,intent.amount_cents,intentHash);
     const results=await db.batch([insertReservation,consumeNonce]);
     if(!Array.isArray(results)||results.length!==2)return deny('transaction_result_unavailable');
