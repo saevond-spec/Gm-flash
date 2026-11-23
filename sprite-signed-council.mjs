@@ -25,7 +25,7 @@ const equalBytes=(a,b)=>{
 };
 export function exactCouncilApprovalMessage(role,intent,approvedAt,expiresAt){
   const canonical=canonicalBidIntent(intent);
-  if(!canonical||!['nova','chatgpt_operator'].includes(role)
+  if(!canonical||!['mother','nova','chatgpt_operator'].includes(role)
     ||!validInt(approvedAt,intent.created_at,intent.created_at+899)
     ||!validInt(expiresAt,approvedAt+1,intent.created_at+900))return null;
   return 'sprite-signed-review-v1|'+role+'|'+canonical+'|'+approvedAt+'|'+expiresAt;
