@@ -33,6 +33,8 @@ jobs:
           node --check council-release.mjs
           node --check low-bid-triage.mjs
           node --check sprite-multi-bid-campaign.mjs
+          node --check sprite-independent-approvals.mjs
+          node --check tests/sprite-independent-approvals.test.mjs
           node --check tests/sprite-multi-bid-campaign.test.mjs
       - name: Complete synthetic test suite
         run: node --test tests/*.test.mjs
