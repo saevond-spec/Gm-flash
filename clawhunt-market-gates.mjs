@@ -21,6 +21,7 @@ export function assessClawhuntBidGates({intent,task,agent,standing,criteria,hear
   if(!standing||standing.source!=='authenticated_standing'||standing.verified!==true||
     standing.held_back!==false||standing.account_paused!==false||
     standing.own_bid_exists!==false||standing.eligible_for_task!==true||
+    standing.task_id!==intent?.problem_id||
     !integer(standing.checked_at_sec,nowSec-300,nowSec))
     problems.push('standing_unknown_or_held_back');
   if(!heartbeat||heartbeat.status!==200||heartbeat.agent_id!==1878||
