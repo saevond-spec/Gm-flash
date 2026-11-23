@@ -43,6 +43,8 @@ jobs:
           node --check council-release.mjs
           node --check sprite-mother-stage-worker.mjs
           node --check sprite-nova-stage-worker.mjs
+          node --check sprite-council-stage-rpc-probe-worker.mjs
+          node --check sprite-tripartite-stage-verifier.mjs
           node --check low-bid-triage.mjs
       - name: Complete synthetic test suite
         run: node --test tests/*.test.mjs
