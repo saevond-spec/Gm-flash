@@ -12,7 +12,7 @@ const task=()=>({source:'authenticated_task_detail',problem_id:'99591',status:'b
  incremental_cost_cents:0,requirements:[...requirements]});
 const draft=()=>({
  proposal:[
- 'Deliverables: Produce a fictional cleaned CSV with row count and an accompanying change log.',
+ 'Deliverables: Provide a fictional cleaned CSV with row count and an accompanying change log.',
  'Acceptance criteria: Produce a fictional reconciliation log of changed rows; keep the input untouched.',
  'Verification: Recompute row totals, inspect changes, and attach a synthetic reproducibility report.',
  'Exclusions: No paid tools, no external customer data and no claims of completed work.',
