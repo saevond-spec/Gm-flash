@@ -4,10 +4,11 @@ on:
   push:
     branches:
       - fix/sprite-council-low-bid-preflight-20261122
-  pull_request:
-    branches:
-      - fix/sprite-low-bids-budget-proof-20261122
   workflow_dispatch:
+
+concurrency:
+  group: sprite-synthetic-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
