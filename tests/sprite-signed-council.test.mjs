@@ -46,22 +46,22 @@ test('REAL ED25519 CRYPTO: Nova signature must not verify under operator key',as
  const f=await fixture();
  const r=await verifyIndependentSpriteCouncil({...f,novaPublicKeyB64:f.operatorPublicKeyB64,
   operatorPublicKeyB64:f.novaPublicKeyB64});
- assert.equal(r.reason,'mother_signature_or_binding_invalid');
+ assert.equal(r.reason,'nova_signature_or_binding_invalid');
 });
 test('REAL ED25519 CRYPTO: modified exact task invalidates both signed approvals',async()=>{
  const f=await fixture();
  const r=await verifyIndependentSpriteCouncil({...f,intent:{...f.intent,problem_id:'9952'}});
- assert.equal(r.reason,'nova_signature_or_binding_invalid');
+ assert.equal(r.reason,'mother_signature_or_binding_invalid');
 });
 test('REAL ED25519 CRYPTO: modified quote invalidates approvals',async()=>{
  const f=await fixture();
  const r=await verifyIndependentSpriteCouncil({...f,intent:{...f.intent,amount_cents:850}});
- assert.equal(r.reason,'nova_signature_or_binding_invalid');
+ assert.equal(r.reason,'mother_signature_or_binding_invalid');
 });
 test('REAL ED25519 CRYPTO: modified proposal hash invalidates exact intent',async()=>{
  const f=await fixture();
  const r=await verifyIndependentSpriteCouncil({...f,intent:{...f.intent,proposal_sha256:'d'.repeat(64)}});
- assert.equal(r.reason,'nova_signature_or_binding_invalid');
+ assert.equal(r.reason,'mother_signature_or_binding_invalid');
 });
 test('REAL ED25519 CRYPTO: forged base64 signature is not accepted',async()=>{
  const f=await fixture();
@@ -81,12 +81,12 @@ test('REAL ED25519 CRYPTO: approval expiry cannot be extended using unsigned JSO
 test('REAL ED25519 CRYPTO: exact expiry instant is a hold',async()=>{
  const f=await fixture();
  const r=await verifyIndependentSpriteCouncil({...f,nowSec:now+300});
- assert.equal(r.reason,'nova_signature_or_binding_invalid');
+ assert.equal(r.reason,'mother_signature_or_binding_invalid');
 });
 test('REAL ED25519 CRYPTO: invalid public key bytes fail closed',async()=>{
  const f=await fixture();
  const r=await verifyIndependentSpriteCouncil({...f,novaPublicKeyB64:'invalid'});
- assert.equal(r.reason,'distinct_trusted_public_keys_missing');
+ assert.equal(r.reason,'three_distinct_trusted_public_keys_missing');
 });
 test('REAL ED25519 CRYPTO: legacy original #3298 never enters council signature verification',async()=>{
  const f=await fixture();
