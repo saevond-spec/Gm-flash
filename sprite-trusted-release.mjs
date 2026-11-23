@@ -1,5 +1,5 @@
 // Sprite-only trusted council adapter. Intended solely for a private Worker
-// with pinned Nova and operator public keys from DEPLOYMENT CONFIG, never requests.
+// with pinned Mother, Nova and operator public keys from DEPLOYMENT CONFIG, never requests.
 // Neither this function nor any council review can send a marketplace request.
 import {canonicalBidIntent,councilBidPreflight} from './council-preflight.mjs';
 import {authorizeAndReserveBid} from './council-release.mjs';
@@ -7,11 +7,12 @@ import {verifyIndependentSpriteCouncil} from './sprite-signed-council.mjs';
 
 const hold=reason=>({state:'hold',reason,can_submit:false});
 export async function reviewSpriteBidWithPinnedSigners({
-  intent,novaService,operatorService,novaPublicKeyB64,operatorPublicKeyB64,
+  intent,motherService,novaService,operatorService,motherPublicKeyB64,novaPublicKeyB64,operatorPublicKeyB64,
   readLedger,nowSec,cryptoApi=crypto
 }={}){
   if(!canonicalBidIntent(intent)||intent.problem_id==='3298')return hold('invalid_or_legacy_bid');
-  if(!novaService||typeof novaService.reviewBidIntent!=='function'||
+  if(!motherService||typeof motherService.reviewBidIntent!=='function'||
+     !novaService||typeof novaService.reviewBidIntent!=='function'||
      !operatorService||typeof operatorService.reviewBidIntent!=='function')
     return hold('private_review_services_unavailable');
   if(typeof readLedger!=='function')return hold('private_ledger_unavailable');
@@ -22,6 +23,10 @@ export async function reviewSpriteBidWithPinnedSigners({
     proposal_sha256:intent.proposal_sha256,scope_sha256:intent.scope_sha256,
     nonce:intent.nonce,created_at:intent.created_at
   });
+  let mother;
+  try{mother=await motherService.reviewBidIntent(packet);}
+  catch{return hold('mother_service_unavailable')}
+  if(mother?.decision!=='approve')return hold('mother_not_approved');
   let nova;
   try{nova=await novaService.reviewBidIntent(packet);}
   catch{return hold('nova_service_unavailable')}
@@ -31,20 +36,21 @@ export async function reviewSpriteBidWithPinnedSigners({
   catch{return hold('operator_service_unavailable')}
   if(operator?.decision!=='approve')return hold('operator_not_approved');
   const signed=await verifyIndependentSpriteCouncil({
-    intent,nova,control:operator,novaPublicKeyB64,operatorPublicKeyB64,nowSec,cryptoApi
+    intent,mother,nova,control:operator,motherPublicKeyB64,novaPublicKeyB64,operatorPublicKeyB64,nowSec,cryptoApi
   });
-  if(signed.state!=='verified_dual_signatures')return hold(signed.reason);
-  // Only the two approval objects verified above are accepted in this exact
+  if(signed.state!=='verified_tripartite_signatures')return hold(signed.reason);
+  // Only the three approval objects verified above are accepted in this exact
   // invocation. The verifier callbacks are NOT provided by HTTP callers.
   const trusted=await councilBidPreflight({
-    intent,nova,control:operator,nowSec,readLedger,
+    intent,mother,nova,control:operator,nowSec,readLedger,
+    verifyMother:async(a,c)=>a===mother&&c===packet.canonical_intent,
     verifyNova:async(a,c)=>a===nova&&c===packet.canonical_intent,
     verifyControl:async(a,c)=>a===operator&&c===packet.canonical_intent
   });
   if(trusted.state!=='preflight_passed_not_released')return hold(trusted.reason);
   return {state:'signed_preflight_passed_not_released',can_submit:false,
     requires_atomic_reservation:true,problem_id:intent.problem_id,
-    nova,control:operator};
+    mother,nova,control:operator};
 }
 
 
@@ -52,12 +58,12 @@ export async function reviewSpriteBidWithPinnedSigners({
 // bindings, pinned keys, DB, final-check function, or a fake trusted clock.
 // It produces ONLY a scoped reserved grant, never a ClawHunt network request.
 export async function reserveSignedSpriteBid({
- intent,novaService,operatorService,novaPublicKeyB64,operatorPublicKeyB64,
+ intent,motherService,novaService,operatorService,motherPublicKeyB64,novaPublicKeyB64,operatorPublicKeyB64,
  readLedger,independentFinalCheck,db,nowSec,cryptoApi=crypto
 }={}){
  const denied=reason=>({state:'hold',reason,can_submit:false,reserved:false});
  const verified=await reviewSpriteBidWithPinnedSigners({
-  intent,novaService,operatorService,novaPublicKeyB64,operatorPublicKeyB64,
+  intent,motherService,novaService,operatorService,motherPublicKeyB64,novaPublicKeyB64,operatorPublicKeyB64,
   readLedger,nowSec,cryptoApi
  });
  if(verified.state!=='signed_preflight_passed_not_released')return denied(verified.reason);
@@ -67,7 +73,8 @@ export async function reserveSignedSpriteBid({
  // from the bid payload or from a different request.
  const expected=canonicalBidIntent(intent);
  return authorizeAndReserveBid({
-  intent,nova:verified.nova,control:verified.control,
+  intent,mother:verified.mother,nova:verified.nova,control:verified.control,
+  verifyMother:async(a,c)=>a===verified.mother&&c===expected,
   verifyNova:async(a,c)=>a===verified.nova&&c===expected,
   verifyControl:async(a,c)=>a===verified.control&&c===expected,
   readLedger,db,nowSec,independentFinalCheck
