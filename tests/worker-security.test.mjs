@@ -175,7 +175,7 @@ test("visual probe refuses arbitrary image URL",async()=>{
 });
 
 
-const fundedFixture=Object.freeze({id:123,status:"bidding",escrow_status:"held",funded:true,budget_cents:5000});
+const fundedFixture=Object.freeze({id:123,status:"bidding",escrow_status:"held",funded:true,currency:"USD",budget_cents:5000});
 test("eligible held escrow fixture and exact net quote arithmetic",()=>{
   const a=qualifyTask(fundedFixture,"123",5000);
   assert.equal(a.eligible,true);
@@ -194,7 +194,7 @@ test("exhaustive funding/status/simulation/budget matrix rejects unsafe combinat
   for(const funded of [true,false,undefined])
   for(const is_simulated of [true,false])
   for(const budget_cents of [4999,5000,6000,undefined]){
-    const task={id:123,escrow_status,status,funded,is_simulated,budget_cents};
+    const task={id:123,escrow_status,status,funded,is_simulated,budget_cents,currency:"USD"};
     const expected=escrow_status==="held" && ["open","bidding"].includes(status) && funded!==false && is_simulated===false && [5000,6000].includes(budget_cents);
     assert.equal(qualifyTask(task,"123",5000).eligible,expected,JSON.stringify(task));
     cases++;
@@ -224,7 +224,7 @@ test("funded dry run verifies task and budget but never posts",async()=>{
 });
 
 test("market observer ranks limited listing metadata and never implies delivery capability",()=>{
- const rows=[{id:31,title:"A",status:"open",escrow_status:"held",budget_cents:4000,description:"private test content",buyer:{email:"not-real"}},{id:22,title:"B",status:"open",escrow_status:"pending",budget_cents:9999},{id:33,title:"C",status:"open",escrow_status:"held",budget_cents:10000,simulated:true},{id:34,title:"D",status:"open",escrow_status:"held",budget:9000},{id:31,title:"duplicate"},{id:"invalid"}];
+ const rows=[{id:31,title:"A",status:"open",currency:"USD",escrow_status:"held",budget_cents:4000,description:"private test content",buyer:{email:"not-real"}},{id:22,title:"B",status:"open",escrow_status:"pending",budget_cents:9999},{id:33,title:"C",status:"open",escrow_status:"held",budget_cents:10000,simulated:true},{id:34,title:"D",status:"open",escrow_status:"held",budget:9000},{id:31,title:"duplicate"},{id:"invalid"}];
  const x=marketObservation({data:{problems:rows}},"2026-01-01T00:00:00Z");
  assert.equal(x.review_candidates,1);assert.equal(x.valid_unique_records,4);assert.equal(x.observations[0].problem_id,"31");
  assert.equal(x.observations[0].settlement_at_posted_budget_cents,3000);
@@ -237,7 +237,7 @@ test("market observer only makes identity and listing GET requests; unauthorized
  const calls=[];globalThis.fetch=async(url,opts={})=>{
   calls.push({url:String(url),method:opts.method||"GET"});
   if(String(url).endsWith("/me"))return Response.json({data:{agent:{id:1878,name:"Sprite",admission_status:"approved",webhook_secret:"s".repeat(64),webhook_url:hook}}});
-  if(String(url).endsWith("/problems"))return Response.json({data:{problems:[{id:9,title:"Test",status:"open",escrow_status:"held",budget_cents:4000}]}});
+  if(String(url).endsWith("/problems"))return Response.json({data:{problems:[{id:9,title:"Test",status:"open",currency:"USD",escrow_status:"held",budget_cents:4000}]}});
   throw Error("Unexpected request");
  };
  try{
@@ -251,11 +251,11 @@ test("market observer only makes identity and listing GET requests; unauthorized
 test("integrated bid-and-solve blocks missing scope approval, unfunded tasks and negative economics",async()=>{
  const input={problem_id:"123",amount_cents:2000,message:"Fictional test delivery plan",profile:"arithmetic_reconciliation",hours:2,cost_cents:0,confirm:"PLACE_BID",confirm_scope_review:true};
  for(const [task,overrides,status] of [
- [{id:123,status:"open",escrow_status:"held",budget_cents:3000},{confirm_scope_review:false},400],
- [{id:123,status:"open",escrow_status:"pending",budget_cents:3000},{},409],
- [{id:123,status:"open",escrow_status:"held",budget_cents:3000},{cost_cents:2000},409],
- [{id:123,status:"open",escrow_status:"held",budget_cents:3000},{profile:"unknown"},422],
- [{id:123,status:"open",escrow_status:"held",budget_cents:3000},{confirm:"NO"},400]
+ [{id:123,status:"open",currency:"USD",escrow_status:"held",budget_cents:3000},{confirm_scope_review:false},400],
+ [{id:123,status:"open",currency:"USD",escrow_status:"pending",budget_cents:3000},{},409],
+ [{id:123,status:"open",currency:"USD",escrow_status:"held",budget_cents:3000},{cost_cents:2000},409],
+ [{id:123,status:"open",currency:"USD",escrow_status:"held",budget_cents:3000},{profile:"unknown"},422],
+ [{id:123,status:"open",currency:"USD",escrow_status:"held",budget_cents:3000},{confirm:"NO"},400]
  ]){
   const calls=mockClawhunt(true,task);
   try{const r=await auth("/api/bid-solve",{...input,...overrides});assert.equal(r.status,status);assert.ok(calls.every(c=>c.method==="GET"));}finally{globalThis.fetch=savedFetch}
@@ -272,7 +272,7 @@ test("integrated bid-and-solve sends exactly one simulated bid after all gates p
  const calls=[];globalThis.fetch=async(url,opts={})=>{
   calls.push({url:String(url),method:opts.method||"GET"});
   if(String(url).endsWith("/me"))return Response.json({data:{agent:{id:1878,name:"Sprite",admission_status:"approved",webhook_secret:"s".repeat(64),webhook_url:hook}}});
-  if(String(url).endsWith("/problems/123"))return Response.json({data:{problem:{id:123,status:"open",escrow_status:"held",budget_cents:3000}}});
+  if(String(url).endsWith("/problems/123"))return Response.json({data:{problem:{id:123,status:"open",currency:"USD",escrow_status:"held",budget_cents:3000}}});
   if(String(url).endsWith("/problems/123/bid")){assert.equal(opts.method,"POST");assert.equal(JSON.parse(opts.body).amount,2000);return Response.json({mock:true});}
   throw Error("Unexpected fetch");
  };
