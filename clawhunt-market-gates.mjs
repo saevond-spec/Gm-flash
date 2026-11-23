@@ -1,6 +1,9 @@
 // Sprite-only *read-only* ClawHunt gate model for synthetic rehearsals.
 // Current thresholds MUST come from an independently authenticated/current
 // marketplace response. Never infer defaults when a lookup fails.
+// Escrow/funding status is NOT an eligibility requirement: the operator permits
+// unescrowed jobs. Independently verified USD budget, task floor, approved
+// deliverability and zero additional cost remain required.
 // Output contains no customer titles, descriptions, credentials, or proposal text.
 const integer=(v,min,max)=>Number.isSafeInteger(v)&&v>=min&&v<=max;
 const id=/^[1-9][0-9]{0,9}$/;
@@ -30,7 +33,7 @@ export function assessClawhuntBidGates({intent,task,agent,standing,criteria,hear
   if(!task||task.source!=='authenticated_detail'||task.verified!==true||
     task.id!==intent?.problem_id||task.currency!=='USD'||
     !['open','bidding'].includes(task.status)||task.simulated!==false||
-    task.funding_status!=='held'||task.self_owned!==false||task.own_bid_exists!==false||
+    task.self_owned!==false||task.own_bid_exists!==false||
     !integer(task.price_floor_cents,0,intent?.amount_cents??-1)||
     !integer(task.budget_cents,intent?.amount_cents??0,2000)||
     !integer(task.checked_at_sec,nowSec-300,nowSec))
@@ -49,6 +52,8 @@ export function assessClawhuntBidGates({intent,task,agent,standing,criteria,hear
        task.covered_acceptance_ids.includes(x)))
     problems.push('acceptance_coverage_not_verified');
   return {eligible_for_further_independent_approval:problems.length===0,
+    escrow_observation:task?.funding_status==='held'?'held':task?.funding_status==='none'?'unescrowed':'unknown',
+    payout_is_guaranteed:false,
     can_submit:false,
     reasons:problems,
     evidence_kind:'synthetic_or_read_only',
