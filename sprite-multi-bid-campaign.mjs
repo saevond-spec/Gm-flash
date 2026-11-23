@@ -27,7 +27,7 @@ function reviewRow(row,now){
   // An open bidding task may lack accepted-bid escrow; that alone is not a bid prohibition.
   // An authenticated, explicit 'none' or 'unfunded' means higher payment risk,
   // NOT that payment will be made. Unknown or ambiguous funding still fails closed.
-  if(!['held','none','unfunded'].includes(row?.escrow_status))
+  if(!['held','none','unfunded','pending'].includes(row?.escrow_status))
     reasons.push('funding_status_unverified');
   if(row?.acceptance_criteria_verified!==true||row?.acceptance_coverage_verified!==true
     ||row?.isolated_delivery_verified!==true||row?.fictional_rehearsal_passed!==true
