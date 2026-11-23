@@ -14,7 +14,7 @@ for(const [name,replace,reason] of [
  ['control absent',{control:null},'control_approval_missing_or_mismatched'],
  ['amount mismatch',{nova:{...ok.nova,amount_cents:500}},'nova_approval_missing_or_mismatched'],
  ['floor increased above quote',{intent:{...intent,verified_floor_cents:800}},'invalid_or_expired_intent'],
- ['different proposal',{intent:{...intent,proposal_sha256:'e'.repeat(64)}},'nova_approval_missing_or_mismatched'],
+ ['different proposal',{intent:{...intent,proposal_sha256:'e'.repeat(64)}},'mother_approval_missing_or_mismatched'],
  ['different nonce',{control:{...ok.control,nonce:'f'.repeat(32)}},'control_approval_missing_or_mismatched'],
  ['missing signature verifier',{verifyNova:null},'trusted_services_missing'],
  ['Mother invalid signature',{verifyMother:async()=>false},'mother_signature_unverified'],
