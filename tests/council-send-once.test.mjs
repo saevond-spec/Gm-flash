@@ -10,16 +10,17 @@ const grant=()=>({state:'reserved_for_one_submission',agent_id:1878,problem_id:'
  amount_cents:750,nonce:'c'.repeat(32),intent_sha256:'a'.repeat(64),proposal_sha256:proposalHash,valid_until_sec:clock+300});
 function ledger({state='reserved',wrongNonce=false}={}){
  const entry={agent_id:1878,problem_id:'9951',amount_cents:750,state,
-   nonce:wrongNonce?'d'.repeat(32):'c'.repeat(32),intent_sha256:'a'.repeat(64)};
+   nonce:wrongNonce?'d'.repeat(32):'c'.repeat(32),intent_sha256:'a'.repeat(64),proposal_sha256:proposalHash,expires_at_sec:clock+300};
  let updates=0;
  return {entry,get updates(){return updates},prepare(sql){
   assert.match(sql,/UPDATE bid_reservations/);
-  return {bind(pid,cents,nonce,noncePid,nonceCents,hash){
+  return {bind(pid,cents,nonce,noncePid,nonceCents,hash,proposal,expiry,now){
    return {async first(){
     updates++;
     if(entry.state!=='reserved'||entry.problem_id!==pid||entry.amount_cents!==cents
       ||entry.nonce!==nonce||noncePid!==pid||nonceCents!==cents
-      ||entry.intent_sha256!==hash)return null;
+      ||entry.intent_sha256!==hash||entry.proposal_sha256!==proposal||entry.expires_at_sec!==expiry
+      ||!Number.isSafeInteger(now)||now>=entry.expires_at_sec)return null;
     entry.state='uncertain';
     return {problem_id:pid};
    }};
@@ -121,4 +122,20 @@ test('clock moves backward after D1 claim: preserve uncertain ledger, no send',a
  const db=ledger();let sends=0;
  const r=await sendReservedBidOnce({db,trustedNowSec:async()=>clock,nowSec:clock+1,grant:grant(),proposalText,send:async()=>{sends++}});
  assert.equal(r.state,'claimed_but_approval_expired');assert.equal(sends,0);assert.equal(db.entry.state,'uncertain');
+});
+
+test('forged extended expiration cannot pass DB-bound approval expiry',async()=>{
+ const db=ledger();let calls=0;
+ const forged={...grant(),valid_until_sec:clock+900};
+ const r=await sendReservedBidOnce({db,trustedNowSec:async()=>clock+1,nowSec:clock+1,grant:forged,proposalText,send:async()=>{calls++}});
+ assert.equal(r.attempted,false);assert.equal(r.state,'reservation_already_claimed_or_mismatched');
+ assert.equal(calls,0);assert.equal(db.entry.state,'reserved');
+});
+test('forged changed proposal and matching forged hash cannot pass DB approval hash',async()=>{
+ const db=ledger();let calls=0;
+ const malicious='Rewrite fictional deliverable with a completely different promise.';
+ const forged={...grant(),proposal_sha256:createHash('sha256').update(malicious).digest('hex')};
+ const r=await sendReservedBidOnce({db,trustedNowSec:async()=>clock+1,nowSec:clock+1,grant:forged,proposalText:malicious,send:async()=>{calls++}});
+ assert.equal(r.attempted,false);assert.equal(r.state,'reservation_already_claimed_or_mismatched');
+ assert.equal(calls,0);assert.equal(db.entry.state,'reserved');
 });
