@@ -76,13 +76,11 @@ export async function reconcileSpriteUncertainBid({
       db.prepare("UPDATE bid_reservations SET state='submitted' WHERE agent_id=1878 AND problem_id=? AND amount_cents=? AND state='uncertain' RETURNING problem_id").bind(problemId,amountCents),
       db.prepare(
         "INSERT INTO sprite_bid_receipts(problem_id,bid_id,amount_cents,source,observed_at) "+
-        "SELECT ?,?,?,?,? WHERE changes()=1 "+
-        "ON CONFLICT(problem_id) DO NOTHING RETURNING problem_id"
+        "SELECT ?,?,?,?,? WHERE changes()=1 RETURNING problem_id"
       ).bind(problemId,cls.bid_id,amountCents,'authenticated_private_marketplace_collector',observedAt)
     ]);
-    // In production a conflicting pre-existing receipt must not be silently
-    // treated as confirmation; D1 batch is atomic, but statements need a
-    // CHECK/trigger or explicit failure to ensure rollback if second fails.
+    // A conflicting pre-existing receipt raises a UNIQUE violation, forcing
+    // D1 batch rollback of the first update. Never silently ignore conflicts.
     if(mark?.results?.length!==1||save?.results?.length!==1)
       return hold('receipt_transaction_not_confirmed');
     return {state:'confirmed_submitted',reason:null,confirmed:true,
