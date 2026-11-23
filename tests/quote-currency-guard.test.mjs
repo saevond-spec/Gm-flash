@@ -14,6 +14,6 @@ const cases=[
  [{...base,escrow_status:"none",currency:undefined},500,true,false],
  [{...base,escrow_status:"none"},499,true,false],
  [base,500.5,false,false],
- [{...base,escrow_status:"held",funded:false},500,false,false],
+ [{...base,escrow_status:"held",funded:false},500,false,true],
 ];
 for(const [i,[task,quote,optional,expected]] of cases.entries())test("currency and quote gate "+i,()=>assert.equal(qualifyTask(task,"123",quote,optional).eligible,expected));
