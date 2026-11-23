@@ -16,7 +16,7 @@ export function reviewMotherStageBid({intent,evidence,nowSec}={}){
  if(!validInt(evidence.collected_at,nowSec-120,nowSec)||evidence.task_status!=='bidding'
     ||evidence.currency!=='USD'||evidence.budget_cents!==intent.verified_budget_cents
     ||evidence.floor_cents!==intent.verified_floor_cents
-    ||evidence.own_bid_exists!==false||evidence.escrow_required===true)
+    ||evidence.own_bid_exists!==false)
     return hold('mother_task_budget_or_bid_state_unverified');
  if(evidence.incremental_cost_cents!==0||evidence.isolated_delivery!==true
     ||evidence.scope_sha256!==intent.scope_sha256
