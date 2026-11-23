@@ -38,7 +38,7 @@ export async function councilBidPreflight({intent, nova, control, verifyNova, ve
   try {
     if (await verifyNova(nova, canonical) !== true) return deny('nova_signature_unverified');
     if (await verifyControl(control, canonical) !== true) return deny('control_signature_unverified');
-    const ledger = await readLedger(intent.problem_id);
+    const ledger = await readLedger(intent.problem_id,intent.nonce);
     if (!ledger || ledger.available !== true || ledger.blocking_unresolved_bid !== false || ledger.existing_reservation !== false || ledger.nonce_seen !== false) return deny('ledger_blocked_or_unavailable');
   } catch { return deny('trusted_service_error'); }
   return {state:'preflight_passed_not_released', reason:'requires_atomic_one_time_nonce_and_reservation',
