@@ -65,9 +65,10 @@ export async function authorizeAndReserveBid({
 // At-most-once transport gate. Runs only in a trusted Sprite-only submission
 // component and never accepts a sender callback from a public HTTP request.
 // State is set to uncertain BEFORE network I/O: worker crash cannot cause retry.
-export async function sendReservedBidOnce({db, grant, send, proposalText, nowSec}) {
+export async function sendReservedBidOnce({db, grant, send, proposalText, nowSec, trustedNowSec}) {
   const stop=reason=>({attempted:false,state:reason,confirmed:false});
   if(!db||typeof db.prepare!=='function'||typeof send!=='function')return stop('trusted_transport_unavailable');
+  if(typeof trustedNowSec!=='function')return stop('trusted_clock_unavailable');
   if(!grant||grant.state!=='reserved_for_one_submission'||grant.agent_id!==1878
     ||!ID.test(grant.problem_id)||grant.problem_id==='3298'
     ||!int(grant.amount_cents,500,2000)
@@ -95,6 +96,14 @@ export async function sendReservedBidOnce({db, grant, send, proposalText, nowSec
     ).bind(grant.problem_id,grant.amount_cents,grant.nonce,grant.problem_id,grant.amount_cents,grant.intent_sha256).first();
   }catch{return stop('reservation_claim_unavailable');}
   if(claim?.problem_id!==grant.problem_id)return stop('reservation_already_claimed_or_mismatched');
+  // A D1 write can be delayed: re-check approval after the reservation claim,
+  // immediately before touching the marketplace. Hold rather than send if expired.
+  // The uncertain reservation is deliberately retained for operator reconciliation.
+  let rechecked;
+  try{rechecked=await trustedNowSec();}
+  catch{return {attempted:false,state:'claimed_but_clock_unavailable',confirmed:false,requires_reconciliation:true};}
+  if(!int(rechecked,nowSec,Number.MAX_SAFE_INTEGER)||rechecked>=grant.valid_until_sec)
+    return {attempted:false,state:'claimed_but_approval_expired',confirmed:false,requires_reconciliation:true};
   let upstream=null;
   try{
     // At most one call. No retries and no implicit receipt acceptance.
