@@ -94,7 +94,7 @@ async function tick(db,jobs,heartbeatAck,send,overrides={}){
 }
 test('AUTONOMOUS REHEARSAL: 2 distinct jobs submitted over cycles, rejects self-owned/unfunded and preserves #3298',async()=>{
  const db=new Memory();const calls=[];
- const queue=[task('8001',{funding:'none'}),task('8002',{selfOwned:true}),task('8003',{amount:650}),task('8004',{amount:750})];
+ const queue=[task('8001',{status:'assigned'}),task('8002',{selfOwned:true}),task('8003',{amount:650,funding:'none'}),task('8004',{amount:750})];
  try{
   const sender=async(j,b)=>{assert.equal(b.problem_id,j.id);calls.push(b);return {status:201}};
   const stale=await tick(db,queue,T-901,sender);
@@ -126,7 +126,7 @@ test('AUTONOMOUS REHEARSAL: price-floor drift and account hold prevent send; 503
 });
 test('AUTONOMOUS REHEARSAL: 96 round seeded quality-gate campaign never bypasses a failed marketplace prerequisite',async()=>{
  const mutations=[
-  j=>j.funding='none',j=>j.selfOwned=true,j=>j.ownBid=true,j=>j.isolated=false,
+  j=>j.status='completed',j=>j.selfOwned=true,j=>j.ownBid=true,j=>j.isolated=false,
   j=>j.acceptance=false,j=>j.simulated=true,j=>j.deadline=false,
   j=>j.floor=j.amount+1,j=>j.budget=j.amount-1,j=>j.status='assigned'
  ];
@@ -204,5 +204,28 @@ test('AUTONOMOUS STRESS: repeated listing rows never produce duplicate attempts'
   assert.equal(outcome.task,'18001');assert.equal(sends,1);
   const after=await tick(db,list,T-2,async()=>{sends++;return {status:201}});
   assert.equal(after.task,null);assert.equal(sends,1);
+ }finally{db.close()}
+});
+
+test('AUTONOMOUS REHEARSAL: unknown escrow evidence is allowed with valid budget and approvals',async()=>{
+ const db=new Memory();let sends=0;
+ try{
+  const job=task('19001',{funding:undefined,amount:700,budget:900});
+  const r=await tick(db,[job],T-1,async()=>{
+   sends++;return {status:201};
+  });
+  assert.equal(r.task,job.id);
+  assert.equal(r.sent.attempted,true);
+  assert.equal(sends,1);
+  assert.equal(db.acceptFakeReceipt({source:'fictional_authoritative_outcomes',
+   verified:true,agent_id:1878,problem_id:job.id,bid_id:'FAKE-BID-'+job.id,amount_cents:700}),true);
+ }finally{db.close()}
+});
+test('AUTONOMOUS REHEARSAL: unescrowed budget below quote still fails closed',async()=>{
+ const db=new Memory();let sends=0;
+ try{
+  const job=task('19002',{funding:'none',amount:700,budget:600});
+  const r=await tick(db,[job],T-1,async()=>{sends++;return {status:201}});
+  assert.equal(r.task,null);assert.equal(sends,0);
  }finally{db.close()}
 });
