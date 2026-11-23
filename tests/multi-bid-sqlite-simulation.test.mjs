@@ -209,3 +209,54 @@ test('SIMULATION: stale or fabricated receipt cannot clear an uncertain reservat
   assert.equal(db.exactReceipt(task,'FAKE-'+task.id),true);
  }finally{db.close();}
 });
+
+test('SIMULATION: seeded 48-round contention/receipt stress probe (over 1,000 fictional candidates)',async()=>{
+ let randomState=0x53a7e9d1;
+ const next=()=>{randomState^=randomState<<13;randomState^=randomState>>>17;randomState^=randomState<<5;return randomState>>>0;};
+ let attemptedCandidates=0,successfulSends=0,reconciled=0,blockedAfterLoss=0;
+ for(let round=0;round<48;round++){
+  const db=new SQLiteLedger();let stuck=false;
+  try{
+   for(let wave=0;wave<4;wave++){
+    const base=30000+round*100+wave*10;
+    const fictional=Array.from({length:6},(_,i)=>{
+      const variant=i===0?{}:next()%7===0?{status:'completed'}:{};
+      return makeTask(base+i,variant);
+    });
+    attemptedCandidates+=fictional.length;
+    let count=0;
+    const results=await Promise.all(fictional.map(t=>tryBid(scenario(t,db),async()=>{
+      count++;return {status:(next()%9===0)?503:201};
+    })));
+    const grants=results.filter(x=>x.grant.reserved);
+    assert.ok(grants.length<=1,'atomic reservation must prohibit >1 winning grant');
+    assert.ok(count<=1,'only one outgoing request per wave');
+    if(stuck){
+      assert.equal(grants.length,0);assert.equal(count,0);
+      blockedAfterLoss+=fictional.length;
+      continue;
+    }
+    assert.equal(grants.length,1,'at least the valid fictional candidate can be selected');
+    const record=results.find(x=>x.grant.reserved),task=fictional.find(x=>x.id===record.grant.problem_id);
+    assert.equal(record.transport.attempted,true);
+    successfulSends+=1;
+    if(record.transport.upstream_status===503 || next()%9===0){
+      stuck=true;
+      // A synthetic timeout or 503 is not conclusive evidence of non-submission.
+    }else{
+      assert.equal(db.exactReceipt(task,'FAKE-'+task.id),true);
+      reconciled+=1;
+    }
+   }
+   const live=db.raw.prepare("SELECT COUNT(*) as n FROM bid_reservations WHERE agent_id=1878 AND problem_id<>'3298' AND state IN ('uncertain','reserved')").get().n;
+   assert.ok(live<=1);
+   assert.equal(db.raw.prepare("SELECT state FROM bid_reservations WHERE problem_id='3298'").get().state,'uncertain');
+   const consumed=db.raw.prepare('SELECT COUNT(*) as n FROM sprite_council_nonce_consumption').get().n;
+   assert.ok(consumed<=4);
+  }finally{db.close();}
+ }
+ assert.equal(attemptedCandidates,48*4*6);
+ assert.ok(successfulSends>=48); // each round starts with clean synthetic ledger except #3298
+ assert.ok(reconciled<=successfulSends);
+ assert.ok(blockedAfterLoss>0);
+});
