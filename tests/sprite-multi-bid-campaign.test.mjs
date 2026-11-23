@@ -119,11 +119,10 @@ test('funded tasks are ranked ahead of explicitly unfunded tasks; both remain el
 });
 test('unfunded status alone does not excuse missing official budget, quote, floor or scope proof',()=>{
  for(const patch of [{budget_cents:null},{floor_cents:null},{quote_cents:2500},
-   {accepted_criteria_verified:false},{acceptance_coverage_verified:false},
+   {acceptance_criteria_verified:false},{acceptance_coverage_verified:false},
    {checked_at_sec:NOW-400},{source:'buyer_text'}]){
   const r=planSpriteMultiBidCycle(fixture({candidates:[task(9103,{escrow_status:'none',...patch})]}));
-  if(!('accepted_criteria_verified' in patch))
-   assert.equal(r.recommendations.length,0);
+  assert.equal(r.recommendations.length,0);
  }
 });
 test('20 otherwise eligible tasks still yield one candidate per dispatch cycle',()=>{
