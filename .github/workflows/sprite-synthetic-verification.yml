@@ -1,0 +1,34 @@
+name: Sprite synthetic verification
+
+on:
+  push:
+    branches:
+      - fix/sprite-council-low-bid-preflight-20261122
+  pull_request:
+    branches:
+      - fix/sprite-low-bids-budget-proof-20261122
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout Sprite-only source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Static syntax check
+        run: |
+          node --check council-preflight.mjs
+          node --check council-release.mjs
+          node --check low-bid-triage.mjs
+      - name: Complete synthetic test suite
+        run: node --test tests/*.test.mjs
