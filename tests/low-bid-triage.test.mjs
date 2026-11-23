@@ -34,7 +34,7 @@ for(const [name,attrs,reason] of [
  ['missing platform limit',{platform_limit_verified:false},'platform_limit_unknown'],
 ]) test('reject '+name,()=>{const r=evaluateLowBidCandidate(valid(attrs),now);assert.equal(r.state,'reject');assert.ok(r.reasons.includes(reason));});
 test('explicit no-escrow or unfunded bid review allowed, with high payment risk and no delivery permit',()=>{
- for(const escrow_status of ['none','unfunded']){
+ for(const escrow_status of ['none','unfunded','pending']){
   const r=evaluateLowBidCandidate(valid({escrow_status}),now);
   assert.equal(r.state,'review_candidate_only');
   assert.equal(r.escrow_risk,'unescrowed');
