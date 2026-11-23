@@ -30,18 +30,22 @@ for(const [name,attrs,reason] of [
  ['unresolved reservation',{has_reservation:true},'prior_bid_unknown'],
  ['simulated',{simulated:true},'simulation_unverified'],
  ['wrong currency',{currency:'EUR'},'currency_unverified'],
- ['unescrowed not opted in',{escrow_status:'none'},'escrow_status_not_verified'],
  ['missing platform limit',{platform_limit_verified:false},'platform_limit_unknown'],
 ]) test('reject '+name,()=>{const r=evaluateLowBidCandidate(valid(attrs),now);assert.equal(r.state,'reject');assert.ok(r.reasons.includes(reason));});
-test('unescrowed optional for review but visibly risky',()=>{
- const r=evaluateLowBidCandidate(valid({escrow_status:'none',allow_unescrowed_review:true}),now);
- assert.equal(r.state,'review_candidate_only');assert.equal(r.escrow_risk,'unescrowed');
+test('unescrowed requires no opt-in and stays review-only',()=>{
+ const r=evaluateLowBidCandidate(valid({escrow_status:'none'}),now);
+ assert.equal(r.state,'review_candidate_only');assert.equal(r.escrow_observation,'unescrowed');
+ assert.equal(r.payout_is_guaranteed,false);assert.equal(r.permits_submission,false);
 });
-test('sort prefers held escrow then verified net per hour, not fictional win chance',()=>{
+test('missing escrow metadata cannot block a verified eligible job',()=>{
+ const r=evaluateLowBidCandidate(valid({escrow_status:undefined}),now);
+ assert.equal(r.state,'review_candidate_only');assert.equal(r.escrow_observation,'unknown');
+});
+test('ranking ignores escrow status and compares only verified net hourly rates',()=>{
  const q=[valid({problem_id:'9951',proposed_quote_cents:750,estimated_minutes:60}),
  valid({problem_id:'9952',proposed_quote_cents:1400,verified_budget_cents:1400,estimated_minutes:240}),
- valid({problem_id:'9953',proposed_quote_cents:2000,verified_budget_cents:2000,estimated_minutes:30,escrow_status:'none',allow_unescrowed_review:true})];
- const r=rankLowBidReview(q,now);assert.deepEqual(r.candidates.map(x=>x.problem_id),['9951','9952','9953']);assert.equal(r.submissions,0);
+ valid({problem_id:'9953',proposed_quote_cents:2000,verified_budget_cents:2000,estimated_minutes:30,escrow_status:'none'})];
+ const r=rankLowBidReview(q,now);assert.deepEqual(r.candidates.map(x=>x.problem_id),['9953','9951','9952']);assert.equal(r.submissions,0);
 });
 test('deduplicates review queue; no customer text copied into output',()=>{
  const r=rankLowBidReview([valid({description:'PRIVATE_CANARY'}),valid(),valid({problem_id:'9952',proposed_quote_cents:0})],now);
@@ -50,4 +54,10 @@ test('deduplicates review queue; no customer text copied into output',()=>{
 test('conflicting duplicate task prices are held, not selected',()=>{
  const r=rankLowBidReview([valid(), valid({verified_budget_cents:1200})],now);
  assert.equal(r.candidates.length,0);assert.deepEqual(r.conflicting_repeat_ids,['9951']);
+});
+
+test('escrow differences do not create a fake duplicate-price conflict',()=>{
+ const r=rankLowBidReview([valid({escrow_status:'none'}),valid({escrow_status:'held'})],now);
+ assert.equal(r.conflicting_repeat_ids.length,0);
+ assert.equal(r.candidates.length,1);
 });
