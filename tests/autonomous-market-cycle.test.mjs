@@ -92,7 +92,7 @@ async function tick(db,jobs,heartbeatAck,send,overrides={}){
  }
  return {inspected:inspected.length,blocked,task:null,sent:null};
 }
-test('AUTONOMOUS REHEARSAL: 2 distinct jobs submitted over cycles, rejects self-owned/unfunded and preserves #3298',async()=>{
+test('AUTONOMOUS REHEARSAL: 2 distinct jobs submitted over cycles, allows unescrowed bids, rejects self-owned and preserves #3298',async()=>{
  const db=new Memory();const calls=[];
  const queue=[task('8001',{funding:'none'}),task('8002',{selfOwned:true}),task('8003',{amount:650}),task('8004',{amount:750})];
  try{
@@ -100,13 +100,13 @@ test('AUTONOMOUS REHEARSAL: 2 distinct jobs submitted over cycles, rejects self-
   const stale=await tick(db,queue,T-901,sender);
   assert.equal(stale.task,null);assert.equal(calls.length,0);
   const first=await tick(db,queue,T-5,sender);
-  assert.equal(first.task,'8003');assert.equal(first.sent.attempted,true);assert.equal(first.sent.confirmed,false);
+  assert.equal(first.task,'8001');assert.equal(first.sent.attempted,true);assert.equal(first.sent.confirmed,false);
   const repeated=await tick(db,queue,T-5,sender);
   assert.equal(repeated.task,null);assert.equal(calls.length,1);
-  assert.equal(db.acceptFakeReceipt({source:'fictional_authoritative_outcomes',verified:true,agent_id:1878,problem_id:'8003',bid_id:'FAKE-BID-8003',amount_cents:649}),false);
-  assert.equal(db.acceptFakeReceipt({source:'fictional_authoritative_outcomes',verified:true,agent_id:1878,problem_id:'8003',bid_id:'FAKE-BID-8003',amount_cents:650}),true);
+  assert.equal(db.acceptFakeReceipt({source:'fictional_authoritative_outcomes',verified:true,agent_id:1878,problem_id:'8001',bid_id:'FAKE-BID-8001',amount_cents:649}),false);
+  assert.equal(db.acceptFakeReceipt({source:'fictional_authoritative_outcomes',verified:true,agent_id:1878,problem_id:'8001',bid_id:'FAKE-BID-8001',amount_cents:650}),true);
   const second=await tick(db,queue,T-5,sender);
-  assert.equal(second.task,'8004');assert.equal(second.sent.attempted,true);
+  assert.equal(second.task,'8003');assert.equal(second.sent.attempted,true);
   assert.equal(calls.length,2);
   assert.equal(db.raw.prepare("SELECT state FROM bid_reservations WHERE problem_id='3298'").get().state,'uncertain');
  }finally{db.close()}
@@ -126,7 +126,7 @@ test('AUTONOMOUS REHEARSAL: price-floor drift and account hold prevent send; 503
 });
 test('AUTONOMOUS REHEARSAL: 96 round seeded quality-gate campaign never bypasses a failed marketplace prerequisite',async()=>{
  const mutations=[
-  j=>j.funding='none',j=>j.selfOwned=true,j=>j.ownBid=true,j=>j.isolated=false,
+  j=>j.funding='unknown',j=>j.selfOwned=true,j=>j.ownBid=true,j=>j.isolated=false,
   j=>j.acceptance=false,j=>j.simulated=true,j=>j.deadline=false,
   j=>j.floor=j.amount+1,j=>j.budget=j.amount-1,j=>j.status='assigned'
  ];
