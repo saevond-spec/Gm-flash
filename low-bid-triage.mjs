@@ -16,6 +16,8 @@ export function evaluateLowBidCandidate(task, nowMs) {
   if (!safeInt(task.verified_budget_cents, 500, 2_000)) reasons.push('budget_unverified_or_out_of_range');
   if (!safeInt(task.proposed_quote_cents, 500, 2_000) || task.proposed_quote_cents > task.verified_budget_cents) reasons.push('quote_unverified_or_over_budget');
   if (task.verified_from !== 'authenticated_detail') reasons.push('detail_source_unverified');
+  if (task.floor_verified_from !== 'authenticated_queue' || !safeInt(task.verified_floor_cents, 0, task.verified_budget_cents)
+      || task.proposed_quote_cents < task.verified_floor_cents) reasons.push('floor_unverified_or_quote_below_floor');
   if (!safeInt(task.details_checked_at_ms, nowMs - 900_000, nowMs)) reasons.push('stale_listing');
   if (!PROFILES.has(task.profile)) reasons.push('unsupported_profile');
   if (task.scope_reviewed !== true || task.acceptance_criteria_verified !== true) reasons.push('scope_not_verified');
@@ -50,7 +52,7 @@ export function rankLowBidReview(queue, nowMs, limit = 10) {
     if (result.problem_id === null) continue;
     // Repeated pages can contain the same task. Conflicting verified scalars invalidate review.
     const fingerprint = JSON.stringify([task.status,task.currency,task.simulated,task.verified_budget_cents,
-      task.proposed_quote_cents,task.verified_from,task.details_checked_at_ms,task.profile,
+      task.proposed_quote_cents,task.verified_from,task.verified_floor_cents,task.floor_verified_from,task.details_checked_at_ms,task.profile,
       task.scope_reviewed,task.acceptance_criteria_verified,task.isolated_delivery_verified,
       task.fictional_rehearsal_passed,task.estimated_minutes,task.incremental_cost_cents,
       task.prior_bid_checked,task.has_existing_bid,task.has_reservation,task.escrow_status,
