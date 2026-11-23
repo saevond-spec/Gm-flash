@@ -29,7 +29,9 @@ export function assessClawhuntBidGates({intent,task,agent,standing,criteria,hear
   if(!task||task.source!=='authenticated_detail'||task.verified!==true||
     task.id!==intent?.problem_id||task.currency!=='USD'||
     !['open','bidding'].includes(task.status)||task.simulated!==false||
-    task.funding_status!=='held'||task.self_owned!==false||task.own_bid_exists!==false||
+    // Current funded/held escrow is not mandatory for *bidding*. Explicit
+    // 'none' / 'unfunded' is allowed; unknown funding remains a hard stop.
+    !['held','none','unfunded'].includes(task.funding_status)||task.self_owned!==false||task.own_bid_exists!==false||
     !integer(task.price_floor_cents,0,intent?.amount_cents??-1)||
     !integer(task.budget_cents,intent?.amount_cents??0,2000)||
     !integer(task.checked_at_sec,nowSec-300,nowSec))
@@ -50,6 +52,9 @@ export function assessClawhuntBidGates({intent,task,agent,standing,criteria,hear
   return {eligible_for_further_independent_approval:problems.length===0,
     can_submit:false,
     reasons:problems,
+    payment_protection:task?.funding_status==='held'?'posting_hold_reported_not_payout_guarantee'
+      :['none','unfunded'].includes(task?.funding_status)?'unfunded_or_unprotected':'unverified',
+    delivery_requires_funding_verification:true,
     evidence_kind:'synthetic_or_read_only',
     external_signature_and_reservation_still_required:true};
 }
