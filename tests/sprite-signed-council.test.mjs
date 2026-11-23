@@ -24,23 +24,23 @@ async function approval(role,i,s){
   approved_at:approvedAt,expires_at:expiresAt,signature};
 }
 async function fixture(){
- const i=intent(),n=await signer(),o=await signer();
- return {intent:i,nowSec:now+2,nova:await approval('nova',i,n),
+ const i=intent(),m=await signer(),n=await signer(),o=await signer();
+ return {intent:i,nowSec:now+2,mother:await approval('mother',i,m),nova:await approval('nova',i,n),
   control:await approval('chatgpt_operator',i,o),
-  novaPublicKeyB64:n.publicKeyB64,operatorPublicKeyB64:o.publicKeyB64,
-  cryptoApi:webcrypto,n,o};
+  motherPublicKeyB64:m.publicKeyB64,novaPublicKeyB64:n.publicKeyB64,operatorPublicKeyB64:o.publicKeyB64,
+  cryptoApi:webcrypto,m,n,o};
 }
-test('REAL ED25519 CRYPTO: two distinct generated private keys verify exact fictional bid',async()=>{
+test('REAL ED25519 CRYPTO: three distinct generated private keys verify exact fictional bid',async()=>{
  const f=await fixture();
  const r=await verifyIndependentSpriteCouncil(f);
- assert.equal(r.state,'verified_dual_signatures');
+ assert.equal(r.state,'verified_tripartite_signatures');
  assert.equal(r.can_submit,false);
  assert.equal(r.requires_atomic_reservation,true);
 });
 test('REAL ED25519 CRYPTO: same public key for both roles is always rejected',async()=>{
  const f=await fixture();
  const r=await verifyIndependentSpriteCouncil({...f,operatorPublicKeyB64:f.novaPublicKeyB64});
- assert.equal(r.reason,'distinct_trusted_public_keys_missing');
+ assert.equal(r.reason,'three_distinct_trusted_public_keys_missing');
 });
 test('REAL ED25519 CRYPTO: Nova signature must not verify under operator key',async()=>{
  const f=await fixture();
@@ -98,4 +98,10 @@ test('REAL ED25519 CRYPTO: role swapping and copied Nova signature fail',async()
  const r=await verifyIndependentSpriteCouncil({...f,control:{
   ...f.nova,reviewer:'chatgpt_operator'}});
  assert.equal(r.reason,'operator_signature_or_binding_invalid');
+});
+
+test('REAL ED25519 CRYPTO: missing mother signature fails closed',async()=>{
+ const f=await fixture();f.mother=null;
+ const r=await verifyIndependentSpriteCouncil(f);
+ assert.equal(r.reason,'mother_signature_or_binding_invalid');
 });
