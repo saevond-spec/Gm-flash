@@ -28,6 +28,7 @@ export async function authorizeAndReserveBid({
     const fresh=await independentFinalCheck(intent);
     if(fresh!==true)return deny('fresh_market_validation_failed');
     const intentHash=await digest(canonicalBidIntent(intent));
+    const validUntil=Math.min(nova.expires_at,control.expires_at,intent.created_at+900);
     const insertReservation=db.prepare(
       "INSERT INTO bid_reservations(agent_id,problem_id,amount_cents,state) "+
       "SELECT 1878,?,?,'reserved' WHERE NOT EXISTS "+
@@ -38,11 +39,11 @@ export async function authorizeAndReserveBid({
     ).bind(intent.problem_id,intent.amount_cents);
     // This extra table has a UNIQUE nonce key and must be created by the scoped migration.
     const consumeNonce=db.prepare(
-      "INSERT INTO sprite_council_nonce_consumption(nonce,agent_id,problem_id,amount_cents,intent_sha256) "+
+      "INSERT INTO sprite_council_nonce_consumption(nonce,agent_id,problem_id,amount_cents,intent_sha256,proposal_sha256,expires_at_sec) "+
       // `changes()` is from the immediately previous INSERT in the D1 transaction.
       // Prevents consuming a nonce if no reservation was actually inserted.
-      "SELECT ?,1878,?,?,? WHERE changes()=1 RETURNING nonce"
-    ).bind(intent.nonce,intent.problem_id,intent.amount_cents,intentHash);
+      "SELECT ?,1878,?,?,?,?,? WHERE changes()=1 RETURNING nonce"
+    ).bind(intent.nonce,intent.problem_id,intent.amount_cents,intentHash,intent.proposal_sha256,validUntil);
     const results=await db.batch([insertReservation,consumeNonce]);
     if(!Array.isArray(results)||results.length!==2)return deny('transaction_result_unavailable');
     const reservation=results[0]?.results??[];
@@ -55,7 +56,7 @@ export async function authorizeAndReserveBid({
     return {state:'reserved_for_one_submission',can_submit:true,reserved:true,
       agent_id:1878,problem_id:intent.problem_id,amount_cents:intent.amount_cents,
       intent_sha256:intentHash,proposal_sha256:intent.proposal_sha256,nonce:intent.nonce,
-      valid_until_sec:Math.min(nova.expires_at,control.expires_at,intent.created_at+900),requires_receipt_reconciliation:true};
+      valid_until_sec:validUntil,requires_receipt_reconciliation:true};
   }catch {
     return deny('atomic_reservation_failed');
   }
@@ -91,9 +92,10 @@ export async function sendReservedBidOnce({db, grant, send, proposalText, nowSec
       "UPDATE bid_reservations SET state='uncertain' "+
       "WHERE agent_id=1878 AND problem_id=? AND amount_cents=? AND state='reserved' "+
       "AND EXISTS (SELECT 1 FROM sprite_council_nonce_consumption "+
-      "WHERE nonce=? AND agent_id=1878 AND problem_id=? AND amount_cents=? AND intent_sha256=?) "+
+      "WHERE nonce=? AND agent_id=1878 AND problem_id=? AND amount_cents=? AND intent_sha256=? "+
+      "AND proposal_sha256=? AND expires_at_sec=? AND expires_at_sec>?) "+
       "RETURNING problem_id"
-    ).bind(grant.problem_id,grant.amount_cents,grant.nonce,grant.problem_id,grant.amount_cents,grant.intent_sha256).first();
+    ).bind(grant.problem_id,grant.amount_cents,grant.nonce,grant.problem_id,grant.amount_cents,grant.intent_sha256,grant.proposal_sha256,grant.valid_until_sec,nowSec).first();
   }catch{return stop('reservation_claim_unavailable');}
   if(claim?.problem_id!==grant.problem_id)return stop('reservation_already_claimed_or_mismatched');
   // A D1 write can be delayed: re-check approval after the reservation claim,
