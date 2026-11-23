@@ -103,7 +103,7 @@ export function normalizePostingBudget(task) {
  if(new Set(values).size!==1)return {cents:null,state:"conflicting_budget"};
  return {cents:values[0],state:has("currency")||keys.slice(2).some(has)?"explicit_usd":"explicit_cents_currency_unknown"};
 }
-export function qualifyTask(task, id, amountCents=null, allowUnescrowed=false) {
+export function qualifyTask(task, id, amountCents=null, _allowUnescrowed=false) {
   const norm=x=>typeof x==="string"?x.trim().toLowerCase():"";
   const statusRaw=norm(task?.status),escrowRaw=norm(task?.escrow_status);
   const status=["open","bidding","claimed","in_progress","completed","closed","cancelled","canceled","expired","submitted","accepted","rejected","draft","assigned"].includes(statusRaw)?statusRaw:"";
@@ -119,13 +119,14 @@ export function qualifyTask(task, id, amountCents=null, allowUnescrowed=false) {
   if(amountCents!==null&&!autonomousAmountAllowed(amountCents))reasons.push("quote_outside_authorized_range");
   const normalizedBudget=normalizePostingBudget(task);
   const budget=normalizedBudget.cents;
+  // A held escrow flag alone is insufficient: a verified USD budget is mandatory,
+  // including on read-only discovery calls without a proposed quote.
+  if(budget===null)reasons.push("budget_cents_unverified");
+  else if(!autonomousAmountAllowed(budget))reasons.push("budget_outside_authorized_range");
   const held=escrow==="held"&&!flags.includes(false)&&!simulated&&norm(task?.currency)==="usd";
-  // Opt-in permits advertised USD compensation only; never represents it as funded.
-  const optional=allowUnescrowed===true&&["","pending","unfunded","none","funded"].includes(escrowRaw)&&!(flags.includes(true)&&flags.includes(false))&&
-    typeof task?.currency==="string"&&task.currency.toUpperCase()==="USD"&&
-    budget!==null&&autonomousAmountAllowed(budget)&&
-    (amountCents===null||autonomousAmountAllowed(amountCents));
-  if(!held&&!optional)reasons.push("escrow_not_confirmed_held");
+  // Operator accepts bids without escrow. Legacy opt-in no longer required.
+  // Escrow is informational only; price, delivery and council checks remain.
+  const optional=!held;
   if(amountCents!==null && (budget===null || amountCents>budget))reasons.push(budget===null?"budget_cents_unverified":"bid_above_budget");
   return {problem_id:String(id),status:status||null,escrow_status:escrow||null,simulated_flag:simulated,budget_cents:budget,budget_evidence_state:normalizedBudget.state,
     funding_assessment:held&&!simulated?"funding_indicated":"unverified_or_unfunded",
@@ -144,7 +145,6 @@ export function qualificationReview(task, assessment) {
  const flags=[task?.funded,task?.is_funded];
  if(reasons.has("task_identity_unverified")||reasons.has("task_not_open_or_status_unknown")||assessment?.simulated_flag===true||reasons.has("simulated_bounty"))return "rejected_identity_status_or_simulation";
  if(currency!=="usd")return "currency_review";
- if(!["","held","pending","none","unfunded","funded"].includes(escrow)||flags.includes(true)&&flags.includes(false)||escrow==="held"&&flags.includes(false))return "rejected_funding_conflict";
  if(assessment?.budget_evidence_state==="conflicting_budget"||assessment?.budget_evidence_state==="invalid_explicit_budget"||assessment?.budget_evidence_state==="unsupported_currency")return "rejected_price_conflict";
  const amount=assessment?.budget_cents;
  if(amount===null||amount===undefined)return "price_review";
@@ -310,7 +310,7 @@ export async function runScheduledScan(env) {
     if(reviewStage==="price_review"&&priceEvidence.state==="listing_price_review")reviewStage="listing_price_review";
     if(["cross_source_conflict","listing_conflict","detail_conflict"].includes(priceEvidence.state))reviewStage="rejected_price_conflict";
     const qualified=reviewStage==="scope_and_readiness_review"&&q.eligible&&autonomousAmountAllowed(q.budget_cents);
-    const nonEscrowQualified=reviewStage==="scope_and_readiness_review"&&!qualified&&optional.eligible&&optional.non_escrow_review_allowed&&autonomousAmountAllowed(optional.budget_cents);
+    const nonEscrowQualified=qualified&&q.non_escrow_review_allowed;
     diagnostics.detail_probes.push({problem_id:id,field_shapes:fundingFieldShape(task),verified_budget_cents:q.budget_cents,escrow_status:q.escrow_status,status:q.status,qualified,non_escrow_qualified:nonEscrowQualified,qualification_stage:reviewStage,budget_evidence_state:optional.budget_evidence_state,price_evidence_state:priceEvidence.state,listing_price_review_cents:priceEvidence.state==="listing_price_review"?priceEvidence.cents:null,reasons:q.reasons});
     if(qualified)eligible.add(id);
     if(nonEscrowQualified)nonEscrow.add(id);
@@ -323,8 +323,12 @@ export async function runScheduledScan(env) {
   diagnostics.qualification_stage_counts={};
   for(const p of diagnostics.detail_probes){const stage=p.qualification_stage??"detail_unavailable";diagnostics.qualification_stage_counts[stage]=(diagnostics.qualification_stage_counts[stage]??0)+1;}
  }catch{outcome="unavailable";}
- const record={observed_at:new Date().toISOString(),outcome,records_examined:examined,funded_candidates:candidates.length,candidate_ids:candidates,bids_submitted:0,diagnostics};
- await env.BID_LEDGER.prepare("INSERT INTO scan_status (id,observed_at,outcome,records_examined,funded_candidates,candidate_ids,bids_submitted,diagnostics_json) VALUES (1,?,?,?,?,?,0,?) ON CONFLICT(id) DO UPDATE SET observed_at=excluded.observed_at,outcome=excluded.outcome,records_examined=excluded.records_examined,funded_candidates=excluded.funded_candidates,candidate_ids=excluded.candidate_ids,bids_submitted=0,diagnostics_json=excluded.diagnostics_json").bind(record.observed_at,outcome,examined,candidates.length,JSON.stringify(candidates),JSON.stringify(diagnostics)).run();
+ // Escrow is not required. This legacy funded_candidates field counts only
+ // held-escrow listings, while candidate_ids also includes unescrowed listings.
+ const heldOnly=diagnostics.detail_probes.filter(p=>p.qualified&&p.escrow_status==='held'&&!p.non_escrow_qualified).length;
+ diagnostics.review_candidate_count=candidates.length;
+ const record={observed_at:new Date().toISOString(),outcome,records_examined:examined,funded_candidates:heldOnly,candidate_ids:candidates,bids_submitted:0,diagnostics};
+ await env.BID_LEDGER.prepare("INSERT INTO scan_status (id,observed_at,outcome,records_examined,funded_candidates,candidate_ids,bids_submitted,diagnostics_json) VALUES (1,?,?,?,?,?,0,?) ON CONFLICT(id) DO UPDATE SET observed_at=excluded.observed_at,outcome=excluded.outcome,records_examined=excluded.records_examined,funded_candidates=excluded.funded_candidates,candidate_ids=excluded.candidate_ids,bids_submitted=0,diagnostics_json=excluded.diagnostics_json").bind(record.observed_at,outcome,examined,heldOnly,JSON.stringify(candidates),JSON.stringify(diagnostics)).run();
  return record;
 }
 export default {

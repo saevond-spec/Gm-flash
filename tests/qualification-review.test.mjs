@@ -84,7 +84,7 @@ const cases=[
       "budget_cents": 2500,
       "budget_evidence_state": "explicit_usd"
     },
-    "rejected_funding_conflict"
+    "scope_and_readiness_review"
   ],
   [
     {
@@ -98,7 +98,7 @@ const cases=[
       "budget_cents": 2500,
       "budget_evidence_state": "explicit_usd"
     },
-    "rejected_funding_conflict"
+    "scope_and_readiness_review"
   ],
   [
     {
@@ -113,7 +113,7 @@ const cases=[
       "budget_cents": 2500,
       "budget_evidence_state": "explicit_usd"
     },
-    "rejected_funding_conflict"
+    "scope_and_readiness_review"
   ],
   [
     {
@@ -129,7 +129,7 @@ const cases=[
       "budget_cents": 2500,
       "budget_evidence_state": "explicit_usd"
     },
-    "rejected_funding_conflict"
+    "scope_and_readiness_review"
   ],
   [
     {
