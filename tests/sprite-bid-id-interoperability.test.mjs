@@ -25,7 +25,7 @@ test('CLAW ID INTEROP: numerical and text encodings of same official ID normaliz
  assert.equal(r.state,'exact_receipt_candidate');assert.equal(r.bid_id,'93521');
 });
 test('CLAW ID INTEROP: explicit proposal_id field accepted in place of bid_id but remains unconfirmed',()=>{
- const r=classify([base({bid_id:undefined,proposal_id:93521})]);
+ const r=classify([base({bid_id:null,proposal_id:93521})]);
  assert.equal(r.state,'exact_receipt_candidate');assert.equal(r.bid_id,'93521');
 });
 test('CLAW ID INTEROP: safe numeric task ID supported through exact string comparison',()=>{
@@ -34,7 +34,7 @@ test('CLAW ID INTEROP: safe numeric task ID supported through exact string compa
 });
 for(const value of [0,-1,1.5,NaN,Infinity,Number.MAX_SAFE_INTEGER,1e15,'0','001','-1','1.5',{},[],true,null,undefined]){
  test('CLAW ID INTEROP: invalid numeric ID '+String(value)+' cannot be receipt',()=>{
-  const r=classify([base({bid_id:value})]);
+  const r=classify([{...base(),bid:{...base().bid,bid_id:value}}]);
   assert.equal(r.state,'unresolved');assert.equal(r.may_resubmit,false);
  });
 }
@@ -49,7 +49,7 @@ test('CLAW ID INTEROP: false 650-cent price encoded as a string remains held',()
  assert.equal(r.state,'unresolved');assert.equal(r.may_resubmit,false);
 });
 test('CLAW ID INTEROP: generic id without explicit bid_id or proposal_id remains held',()=>{
- const r=classify([base({bid_id:undefined,id:93521})]);
+ const r=classify([base({bid_id:null,id:93521})]);
  assert.equal(r.state,'unresolved');
 });
 test('CLAW ID INTEROP: authorized outcome with numeric bid ID is only a candidate',()=>{
