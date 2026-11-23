@@ -32,7 +32,7 @@ export function routeSprite3298Evidence({
  if(problemId!=='3298'||amountCents!==650||!Array.isArray(observations)
    ||observations.length>8)return hold('invalid_exact_probe');
  const diagnostics=[],candidates=[];
- let hasDenied=false,hasAmbiguity=false,hasUnauthorized=false;
+ let hasDenied=false,hasAmbiguity=false,hasIncomplete=false,hasUnauthorized=false;
  for(const item of observations){
   if(!isObj(item)||!ROUTES.has(item.route)||
      item.path!==ROUTES.get(item.route)||
@@ -74,11 +74,18 @@ export function routeSprite3298Evidence({
    if(list===null){diagnostics.push({route,state:'not_an_individual_bid_list'});continue;}
    if(list.length>100){diagnostics.push({route,state:'oversize_list'});continue;}
    if(list.length===0){diagnostics.push({route,state:'empty_list_not_negative_proof'});continue;}
-   // Do not assert entire list is authoritative: classify exact identity and
-   // status on every record, and block on conflicts within any source.
+   // A problem-level outcome without bid identity is incomplete, not proof
+   // of a *contradictory* bid. Preserve uncertainty and report the real gap.
+   const scoped=list.filter(b=>isObj(b)&&String(b.problem_id??b.task_id??'')===problemId);
+   if(scoped.some(b=>!b.bid_id||b.amount_cents===undefined||b.agent_id===undefined&&b.agent?.id===undefined)){
+     diagnostics.push({route,state:'incomplete_own_bid_record',seen:list.length});
+     hasIncomplete=true;
+     continue;
+   }
+   // Do not assert the whole result is authoritative: exact match first,
+   // separate private official-source verification always remains mandatory.
    const r=classifySpriteReceiptEvidence({problemId,amountCents,
-     records:list.filter(b=>isObj(b)&&String(b.problem_id??b.task_id??'')===problemId)
-       .map(b=>({source_type:route==='bid_outcomes'?'authenticated_market_outcomes':'authenticated_bid_record',
+     records:scoped.map(b=>({source_type:route==='bid_outcomes'?'authenticated_market_outcomes':'authenticated_bid_record',
          authenticated:true,bid:{...b,problem_id:String(b.problem_id??b.task_id??''),agent_id:b.agent_id??b.agent?.id}}))});
    diagnostics.push({route,state:r.state,reason:r.reason??null,seen:list.length});
    if(r.state==='exact_receipt_candidate')candidates.push(r.bid_id);
@@ -88,6 +95,7 @@ export function routeSprite3298Evidence({
  }
  const unique=[...new Set(candidates)];
  if(hasAmbiguity||unique.length>1)return hold('conflicting_marketplace_records',diagnostics);
+ if(hasIncomplete&&unique.length>0)return hold('incomplete_records_prevent_confirmation',diagnostics);
  if(hasUnauthorized)return hold('authenticated_provenance_incomplete',diagnostics);
  if(unique.length===1)
    return {...hold('independently_verify_exact_candidate',diagnostics),
