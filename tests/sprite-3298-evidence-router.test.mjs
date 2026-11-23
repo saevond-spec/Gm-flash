@@ -94,3 +94,21 @@ test('512 mutated mock route responses never grant submit or resubmit',()=>{
    assert.equal(x.may_mark_submitted,false);
  }
 });
+
+
+test('incomplete outcome record and one exact receipt candidate still require further proof',()=>{
+ const x=routeSprite3298Evidence({observations:[
+  outcomes({data:{outcomes:[{problem_id:'3298',agent_id:1878,status:'submitted'}]}}),
+  history(200,{data:{bids:[bid()]}})
+ ]});
+ assert.equal(x.state,'unresolved');
+ assert.equal(x.reason,'incomplete_records_prevent_confirmation');
+ assert.equal(x.may_resubmit,false);
+});
+test('incomplete alone is not a contradictory second bid, even when history access denied',()=>{
+ const x=routeSprite3298Evidence({observations:[
+  history(),outcomes({data:{outcomes:[{problem_id:'3298',agent_id:1878,status:'submitted'}]}})
+ ]});
+ assert.equal(x.reason,'bid_history_access_denied_without_exact_receipt');
+ assert.equal(x.diagnostics.find(d=>d.route==='bid_outcomes').state,'incomplete_own_bid_record');
+});
