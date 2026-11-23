@@ -51,6 +51,7 @@ test("pagination counts unique records, stops repeat pages, separates public fai
  const details=Object.fromEntries([...p1,...p2].map(x=>[x.id,x]));
  const f=fixture({pages:{1:p1,2:p2,3:p2},details});const r=await run(f);
  assert.equal(r.records_examined,60);assert.equal(r.diagnostics.unique_records,40);assert.equal(r.diagnostics.duplicate_records,20);
+ console.log("SCAN_PAGES_DEBUG",JSON.stringify({pages:r.diagnostics.pages_requested,urls:f.calls.filter(x=>x.url.includes("/api/v1/problems")).map(x=>x.url),public:r.diagnostics.public_discovery.map(x=>x.status)}));
  assert.equal(r.diagnostics.pages_requested,3);assert.equal(r.diagnostics.detail_probes.length,10);
  assert.equal(r.diagnostics.complete_market_scan,false);assert.ok(!JSON.stringify(f.writes).includes("FICTIONAL_PRIVATE_TITLE"));
  assert.equal(r.diagnostics.public_discovery.length,3);assert.ok(r.diagnostics.public_discovery.every(x=>x.status==="unavailable"));
