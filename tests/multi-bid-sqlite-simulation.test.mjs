@@ -81,7 +81,7 @@ const scenario=(task,ledger)=>{
 async function tryBid(args,sender){
  const grant=await authorizeAndReserveBid(args);
  if(grant.state!=='reserved_for_one_submission')return {grant,transport:null};
- const transport=await sendReservedBidOnce({db:args.db,grant,proposalText:args.proposalText,send:sender});
+ const transport=await sendReservedBidOnce({db:args.db,nowSec:args.nowSec,grant,proposalText:args.proposalText,send:sender});
  return {grant,transport};
 }
 test('SIMULATION: 12 sequential distinct $5-$20 bids, 12 exact fictional receipts, legacy #3298 untouched',async()=>{
@@ -192,7 +192,7 @@ test('SIMULATION: proposal text changed after council authorization fails before
   const args=scenario(makeTask(111),db);
   const grant=await authorizeAndReserveBid(args);
   assert.equal(grant.reserved,true);
-  const transport=await sendReservedBidOnce({db,grant,proposalText:'Altered proposal with entirely different scope',send:async()=>{sends++}});
+  const transport=await sendReservedBidOnce({db,nowSec:NOW+2,grant,proposalText:'Altered proposal with entirely different scope',send:async()=>{sends++}});
   assert.equal(transport.state,'proposal_hash_mismatch');assert.equal(sends,0);
   assert.equal(db.raw.prepare("SELECT state FROM bid_reservations WHERE problem_id=?").get(args.intent.problem_id).state,'reserved');
  }finally{db.close();}
@@ -259,4 +259,17 @@ test('SIMULATION: seeded 48-round contention/receipt stress probe (over 1,000 fi
  assert.ok(successfulSends>=48); // each round starts with clean synthetic ledger except #3298
  assert.ok(reconciled<=successfulSends);
  assert.ok(blockedAfterLoss>0);
+});
+
+test('SIMULATION: approval expires during queued delay; no transport even with signed preflight',async()=>{
+ const db=new SQLiteLedger();let sends=0;
+ try{
+   const task=makeTask(145),args=scenario(task,db);
+   const grant=await authorizeAndReserveBid(args);
+   assert.equal(grant.reserved,true);
+   const delayed=await sendReservedBidOnce({db,nowSec:NOW+501,grant,proposalText:args.proposalText,send:async()=>{sends++}});
+   assert.equal(delayed.state,'approval_expired_before_send');
+   assert.equal(delayed.attempted,false);assert.equal(sends,0);
+   assert.equal(db.raw.prepare("SELECT state FROM bid_reservations WHERE problem_id=?").get(task.id).state,'reserved');
+ }finally{db.close();}
 });
