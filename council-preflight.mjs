@@ -28,6 +28,8 @@ export async function councilBidPreflight({intent, nova, control, verifyNova, ve
   const deny = reason => ({state:'hold', reason, can_submit:false, may_release_governance_hold:false});
   const canonical = canonicalBidIntent(intent);
   if (!canonical || !int(nowSec, intent?.created_at ?? 0, (intent?.created_at ?? 0) + 900)) return deny('invalid_or_expired_intent');
+  // The original #3298 submission is uncertain. No resubmission path is authorized.
+  if(intent.problem_id==='3298')return deny('legacy_bid_3298_held');
   if (!approvalMatches(nova, 'nova', canonical, nowSec, intent)) return deny('nova_approval_missing_or_mismatched');
   if (!approvalMatches(control, 'chatgpt_operator', canonical, nowSec, intent)) return deny('control_approval_missing_or_mismatched');
   // Assertions within JSON are untrusted. Only separately provisioned, strongly authenticated
@@ -37,7 +39,7 @@ export async function councilBidPreflight({intent, nova, control, verifyNova, ve
     if (await verifyNova(nova, canonical) !== true) return deny('nova_signature_unverified');
     if (await verifyControl(control, canonical) !== true) return deny('control_signature_unverified');
     const ledger = await readLedger(intent.problem_id);
-    if (!ledger || ledger.available !== true || ledger.any_unresolved_bid !== false || ledger.existing_reservation !== false || ledger.nonce_seen !== false) return deny('ledger_blocked_or_unavailable');
+    if (!ledger || ledger.available !== true || ledger.blocking_unresolved_bid !== false || ledger.existing_reservation !== false || ledger.nonce_seen !== false) return deny('ledger_blocked_or_unavailable');
   } catch { return deny('trusted_service_error'); }
   return {state:'preflight_passed_not_released', reason:'requires_atomic_one_time_nonce_and_reservation',
     can_submit:false, may_release_governance_hold:false, problem_id:intent.problem_id};
