@@ -61,16 +61,16 @@ test("bid above verified posting budget cannot qualify",()=>{
   assert.equal(r.eligible,false);
   assert.ok(r.reasons.includes("bid_above_budget"));
 });
-test("unescrowed bids require explicit opt-in and remain labeled unverified",()=>{
+test("unescrowed bids do not require opt-in and payment is not guaranteed",()=>{
   const extra={escrow_status:"none",funded:false};
-  const denied=q(1000,700,extra,false);
-  const review=q(1000,700,extra,true);
-  assert.equal(denied.eligible,false);
-  assert.equal(review.eligible,true);
-  assert.equal(review.payment_guaranteed,false);
-  assert.equal(review.delivery_capability_verified,false);
+  const baseline=q(1000,700,extra,false);
+  const legacy=q(1000,700,extra,true);
+  assert.equal(baseline.eligible,true);
+  assert.equal(legacy.eligible,true);
+  assert.equal(baseline.payment_guaranteed,false);
+  assert.equal(baseline.delivery_capability_verified,false);
 });
-test("a missing budget does not become eligible with unescrowed opt-in",()=>{
+test("a missing USD budget still blocks unescrowed bidding",()=>{
   const r=q(undefined,500,{escrow_status:"none"},true);
   assert.equal(r.eligible,false);
   assert.ok(r.reasons.includes("budget_cents_unverified"));
