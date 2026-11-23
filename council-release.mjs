@@ -11,13 +11,13 @@ const hex=bytes=>Array.from(new Uint8Array(bytes),v=>v.toString(16).padStart(2,'
 async function digest(s){return hex(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)));}
 
 export async function authorizeAndReserveBid({
-  intent,nova,control,verifyNova,verifyControl,readLedger,db,nowSec,
+  intent,mother,nova,control,verifyMother,verifyNova,verifyControl,readLedger,db,nowSec,
   independentFinalCheck
 }) {
   if(!db||typeof db.batch!=='function'||typeof db.prepare!=='function')
     return deny('transactional_ledger_missing');
   if(typeof independentFinalCheck!=='function')return deny('fresh_market_check_missing');
-  const initial=await councilBidPreflight({intent,nova,control,verifyNova,verifyControl,readLedger,nowSec});
+  const initial=await councilBidPreflight({intent,mother,nova,control,verifyMother,verifyNova,verifyControl,readLedger,nowSec});
   if(initial.state!=='preflight_passed_not_released')return deny(initial.reason);
   if(!ID.test(intent.problem_id)||intent.problem_id==='3298'||!int(intent.amount_cents,500,2000)||!canonicalBidIntent(intent))
     return deny('invalid_intent');
