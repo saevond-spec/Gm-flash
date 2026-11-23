@@ -71,7 +71,8 @@ function build(task,db,heartbeatAck,overrides={}){
     acceptance_verified:task.acceptance,isolated_delivery_verified:task.isolated,
     zero_incremental_cost:true,deadline_feasible:task.deadline,
     acceptance_ids:['file','totals'],covered_acceptance_ids:['file','totals']}});
- return {intent,nova:approve('nova'),control:approve('chatgpt_operator'),
+ return {intent,mother:approve('mother'),nova:approve('nova'),control:approve('chatgpt_operator'),
+  verifyMother:async (a)=>a.signature===sign('mother',intent),
   verifyNova:async (a)=>a.signature===sign('nova',intent),
   verifyControl:async (a)=>a.signature===sign('chatgpt_operator',intent),
   readLedger:async()=>db.readState(task.id,intent.nonce),
