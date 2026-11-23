@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - fix/sprite-council-low-bid-preflight-20261122
+      - fix/sprite-low-bids-budget-proof-20261122
+      - fix/sprite-discovery-optional-escrow-20261121
   workflow_dispatch:
 
 concurrency:
