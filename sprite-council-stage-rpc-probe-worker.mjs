@@ -70,5 +70,21 @@ export default {
    'INSERT INTO stage_rpc_checks(observed_at,mother_approved,mother_verified,nova_approved,nova_verified,bad_mother_held,bad_nova_held,error_text) VALUES(?,?,?,?,?,?,?,?)'
   ).bind(now,m?.decision==='approve'?1:0,mv?1:0,n?.decision==='approve'?1:0,nv?1:0,bm?1:0,bn?1:0,err).run();
  },
- async fetch(){return new Response(null,{status:403,headers:{'cache-control':'no-store'}});}
+ async fetch(request,env,ctx){
+  // One-time, high-entropy authenticated STAGING-ONLY execution.
+  // Production never binds this Worker to the real bid ledger or marketplace.
+  if(request.method!=='POST'||new URL(request.url).pathname!=='/__stage_rpc_probe')
+   return new Response(null,{status:403,headers:{'cache-control':'no-store'}});
+  const header=request.headers.get('authorization');
+  const token=env.PROBE_INVOCATION_TOKEN;
+  if(typeof token!=='string'||token.length<40||
+     typeof header!=='string'||!header.startsWith('Bearer ')||header.length!==token.length+7)
+   return new Response(null,{status:403,headers:{'cache-control':'no-store'}});
+  const a=new TextEncoder().encode(header.slice(7)),b=new TextEncoder().encode(token);
+  let diff=0;
+  for(let i=0;i<a.length;i++)diff|=a[i]^b[i];
+  if(diff!==0)return new Response(null,{status:403,headers:{'cache-control':'no-store'}});
+  await this.scheduled({cron:'manual-one-shot-stage-only'},env,ctx);
+  return new Response(null,{status:204,headers:{'cache-control':'no-store'}});
+ }
 };
