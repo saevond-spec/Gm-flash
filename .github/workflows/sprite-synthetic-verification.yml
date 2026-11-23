@@ -6,6 +6,7 @@ on:
       - fix/sprite-council-low-bid-preflight-20261122
       - fix/sprite-low-bids-budget-proof-20261122
       - fix/sprite-discovery-optional-escrow-20261121
+      - fix/sprite-mother-nova-private-rpc-stage-20261123
       - fix/sprite-receipt-id-interop-20261123
       - fix/sprite-3298-authoritative-source-routing-20261122
       - fix/sprite-receipt-status-proof-20261122
@@ -40,6 +41,10 @@ jobs:
         run: |
           node --check council-preflight.mjs
           node --check council-release.mjs
+          node --check sprite-mother-stage-worker.mjs
+          node --check sprite-nova-stage-worker.mjs
+          node --check sprite-council-stage-rpc-probe-worker.mjs
+          node --check sprite-tripartite-stage-verifier.mjs
           node --check low-bid-triage.mjs
       - name: Complete synthetic test suite
         run: node --test tests/*.test.mjs
