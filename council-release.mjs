@@ -58,3 +58,37 @@ export async function authorizeAndReserveBid({
     return deny('atomic_reservation_failed');
   }
 }
+
+
+// At-most-once transport gate. Runs only in a trusted Sprite-only submission
+// component and never accepts a sender callback from a public HTTP request.
+// State is set to uncertain BEFORE network I/O: worker crash cannot cause retry.
+export async function sendReservedBidOnce({db, grant, send}) {
+  const stop=reason=>({attempted:false,state:reason,confirmed:false});
+  if(!db||typeof db.prepare!=='function'||typeof send!=='function')return stop('trusted_transport_unavailable');
+  if(!grant||grant.state!=='reserved_for_one_submission'||grant.agent_id!==1878
+    ||!ID.test(grant.problem_id)||grant.problem_id==='3298'
+    ||!int(grant.amount_cents,500,2000)
+    ||typeof grant.intent_sha256!=='string'||!/^[0-9a-f]{64}$/.test(grant.intent_sha256)
+    ||typeof grant.nonce!=='string'||!/^[0-9a-f]{32,64}$/.test(grant.nonce))
+    return stop('reservation_grant_invalid');
+  let claim;
+  try{
+    claim=await db.prepare(
+      "UPDATE bid_reservations SET state='uncertain' "+
+      "WHERE agent_id=1878 AND problem_id=? AND amount_cents=? AND state='reserved' "+
+      "AND EXISTS (SELECT 1 FROM sprite_council_nonce_consumption "+
+      "WHERE nonce=? AND agent_id=1878 AND problem_id=? AND amount_cents=? AND intent_sha256=?) "+
+      "RETURNING problem_id"
+    ).bind(grant.problem_id,grant.amount_cents,grant.nonce,grant.problem_id,grant.amount_cents,grant.intent_sha256).first();
+  }catch{return stop('reservation_claim_unavailable');}
+  if(claim?.problem_id!==grant.problem_id)return stop('reservation_already_claimed_or_mismatched');
+  let upstream=null;
+  try{
+    // At most one call. No retries and no implicit receipt acceptance.
+    upstream=await send({problem_id:grant.problem_id,amount_cents:grant.amount_cents});
+  }catch{}
+  return {attempted:true,state:'uncertain',confirmed:false,requires_reconciliation:true,
+    problem_id:grant.problem_id,amount_cents:grant.amount_cents,
+    upstream_status:Number.isInteger(upstream?.status)?upstream.status:null};
+}
