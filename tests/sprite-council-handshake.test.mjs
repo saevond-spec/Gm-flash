@@ -36,7 +36,7 @@ test('REPAIRED HANDSHAKE SIMULATION: independent verified approvals reach only a
  assert.equal(r.can_submit,false);assert.equal(r.may_release_governance_hold,false);
 });
 test('Nova approval cannot be spoofed by a plain JSON decision',async()=>{
- const x=args();x.novaService.reviewBidIntent=async()=>({...approve('nova',x.intent),signature:'FICTIONAL_FORGED_SIGNATURE'});
+ const x=args();x.novaService.reviewBidIntent=async()=>({...approve('nova',x.intent),signature:'f'.repeat(64)});
  const r=await requestSpriteCouncilReview(x);
  assert.equal(r.reason,'nova_signature_invalid');assert.equal(r.can_submit,false);
 });
