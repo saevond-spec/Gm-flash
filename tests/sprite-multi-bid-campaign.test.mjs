@@ -101,7 +101,7 @@ test('reject unknown budgets, floor, stale details and unsupported scope',()=>{
  }
 });
 test('explicitly unescrowed task may be considered for independent bid authorization',()=>{
- for(const status of ['none','unfunded']){
+ for(const status of ['none','unfunded','pending']){
   const r=planSpriteMultiBidCycle(fixture({candidates:[task(9101,{escrow_status:status})]}));
   assert.equal(r.state,'candidate_for_independent_approval_only');
   assert.equal(r.recommendations[0].payment_protection,'unfunded_or_unprotected');
