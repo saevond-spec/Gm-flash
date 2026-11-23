@@ -32,7 +32,8 @@ export async function authorizeAndReserveBid({
       "INSERT INTO bid_reservations(agent_id,problem_id,amount_cents,state) "+
       "SELECT 1878,?,?,'reserved' WHERE NOT EXISTS "+
       // Legacy #3298 stays reserved forever until a separately verified receipt is found.
-      // Only one NEW bid may have an uncertain transport result at a time.\n      "(SELECT 1 FROM bid_reservations WHERE agent_id=1878 AND problem_id<>'3298' AND state IN ('reserved','uncertain')) "+
+      // Only one NEW bid may have an uncertain transport result at a time.
+      "(SELECT 1 FROM bid_reservations WHERE agent_id=1878 AND problem_id<>'3298' AND state IN ('reserved','uncertain')) "+
       "ON CONFLICT(agent_id,problem_id) DO NOTHING RETURNING problem_id"
     ).bind(intent.problem_id,intent.amount_cents);
     // This extra table has a UNIQUE nonce key and must be created by the scoped migration.
