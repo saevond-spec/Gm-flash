@@ -119,6 +119,10 @@ export function qualifyTask(task, id, amountCents=null, allowUnescrowed=false) {
   if(amountCents!==null&&!autonomousAmountAllowed(amountCents))reasons.push("quote_outside_authorized_range");
   const normalizedBudget=normalizePostingBudget(task);
   const budget=normalizedBudget.cents;
+  // A held escrow flag alone is insufficient: a verified USD budget is mandatory,
+  // including on read-only discovery calls without a proposed quote.
+  if(budget===null)reasons.push("budget_cents_unverified");
+  else if(!autonomousAmountAllowed(budget))reasons.push("budget_outside_authorized_range");
   const held=escrow==="held"&&!flags.includes(false)&&!simulated&&norm(task?.currency)==="usd";
   // Opt-in permits advertised USD compensation only; never represents it as funded.
   const optional=allowUnescrowed===true&&["","pending","unfunded","none","funded"].includes(escrowRaw)&&!(flags.includes(true)&&flags.includes(false))&&
