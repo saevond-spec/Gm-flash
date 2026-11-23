@@ -28,3 +28,13 @@ test('original #3298 is permanently held irrespective of otherwise valid approva
  const r=await councilBidPreflight({...ok,intent:original});
  assert.equal(r.state,'hold');assert.equal(r.reason,'legacy_bid_3298_held');
 });
+
+test('ledger callback receives exact task AND nonce from signed intent',async()=>{
+ let observed=[];
+ const r=await councilBidPreflight({...ok,readLedger:async(problem,nonce)=>{
+  observed=[problem,nonce];
+  return {available:true,blocking_unresolved_bid:false,existing_reservation:false,nonce_seen:false};
+ }});
+ assert.deepEqual(observed,[intent.problem_id,intent.nonce]);
+ assert.equal(r.state,'preflight_passed_not_released');
+});
