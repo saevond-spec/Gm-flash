@@ -182,8 +182,13 @@ test("eligible held escrow fixture and exact net quote arithmetic",()=>{
   assert.equal(a.net_at_quoted_amount_cents,3750);
   assert.equal(a.delivery_capability_verified,false);
 });
-test("conservative qualification rejects missing or contradictory escrow",()=>{
-  for(const patch of [{escrow_status:undefined},{escrow_status:"pending"},{funded:false},{is_funded:false},{is_simulated:true},{simulated:true},{bounty_type:"simulated"},{id:456},{id:undefined},{status:"assigned"},{status:undefined},{budget_cents:undefined},{budget_cents:4999}]){
+test("escrow is optional; identity, task status, simulation and price remain mandatory",()=>{
+  for(const patch of [{escrow_status:undefined},{escrow_status:"pending"},{funded:false},{is_funded:false},{escrow_status:"none"}]){
+    const q=qualifyTask({...fundedFixture,...patch},"123",5000);
+    assert.equal(q.eligible,true,JSON.stringify(patch));
+    assert.equal(q.payment_guaranteed,false);
+  }
+  for(const patch of [{is_simulated:true},{simulated:true},{bounty_type:"simulated"},{id:456},{id:undefined},{status:"assigned"},{status:undefined},{budget_cents:undefined},{budget_cents:4999}]){
     assert.equal(qualifyTask({...fundedFixture,...patch},"123",5000).eligible,false,JSON.stringify(patch));
   }
 });
@@ -195,19 +200,18 @@ test("exhaustive funding/status/simulation/budget matrix rejects unsafe combinat
   for(const is_simulated of [true,false])
   for(const budget_cents of [4999,5000,6000,undefined]){
     const task={id:123,escrow_status,status,funded,is_simulated,budget_cents,currency:"USD"};
-    const expected=escrow_status==="held" && ["open","bidding"].includes(status) && funded!==false && is_simulated===false && [5000,6000].includes(budget_cents);
+    const expected=["open","bidding"].includes(status) && is_simulated===false && [5000,6000].includes(budget_cents);
     assert.equal(qualifyTask(task,"123",5000).eligible,expected,JSON.stringify(task));
     cases++;
   }
   assert.equal(cases,384);
   console.log("FUNDING_MATRIX_CASES",cases);
 });
-test("confirmed bid request for unfunded fixture never reaches marketplace bid endpoint",async()=>{
+test("unescrowed bid without persistent reservation ledger does not reach marketplace POST",async()=>{
   const calls=mockClawhunt(true,{...fundedFixture,escrow_status:"pending"});
   try{
-    const r=await auth("/api/bid",{problem_id:"123",amount_cents:5000,message:"A valid but unfunded fixture plan",confirm:"PLACE_BID"});
-    assert.equal(r.status,409);
-    assert.equal((await r.json()).bid_sent,false);
+    const r=await auth("/api/bid",{problem_id:"123",amount_cents:5000,message:"A valid fictional unescrowed plan",confirm:"PLACE_BID"});
+    assert.equal(r.status,503);
     assert.ok(!calls.some(x=>x.url.endsWith("/bid")));
   }finally{globalThis.fetch=savedFetch}
 });
@@ -248,11 +252,11 @@ test("market observer only makes identity and listing GET requests; unauthorized
  }finally{globalThis.fetch=savedFetch}
 });
 
-test("integrated bid-and-solve blocks missing scope approval, unfunded tasks and negative economics",async()=>{
+test("integrated bid-and-solve still requires scope, viable economics and ledger without escrow",async()=>{
  const input={problem_id:"123",amount_cents:2000,message:"Fictional test delivery plan",profile:"arithmetic_reconciliation",hours:2,cost_cents:0,confirm:"PLACE_BID",confirm_scope_review:true};
  for(const [task,overrides,status] of [
  [{id:123,status:"open",currency:"USD",escrow_status:"held",budget_cents:3000},{confirm_scope_review:false},400],
- [{id:123,status:"open",currency:"USD",escrow_status:"pending",budget_cents:3000},{},409],
+ [{id:123,status:"open",currency:"USD",escrow_status:"pending",budget_cents:3000},{},503],
  [{id:123,status:"open",currency:"USD",escrow_status:"held",budget_cents:3000},{cost_cents:2000},409],
  [{id:123,status:"open",currency:"USD",escrow_status:"held",budget_cents:3000},{profile:"unknown"},422],
  [{id:123,status:"open",currency:"USD",escrow_status:"held",budget_cents:3000},{confirm:"NO"},400]
