@@ -77,7 +77,8 @@ export function routeSprite3298Evidence({
    // A problem-level outcome without bid identity is incomplete, not proof
    // of a *contradictory* bid. Preserve uncertainty and report the real gap.
    const scoped=list.filter(b=>isObj(b)&&String(b.problem_id??b.task_id??'')===problemId);
-   if(scoped.some(b=>!b.bid_id||b.amount_cents===undefined||b.agent_id===undefined&&b.agent?.id===undefined)){
+   if(scoped.some(b=>(b.bid_id===undefined&&b.proposal_id===undefined)||b.amount_cents===undefined||
+       (b.agent_id===undefined&&b.agent?.id===undefined))){
      diagnostics.push({route,state:'incomplete_own_bid_record',seen:list.length});
      hasIncomplete=true;
      continue;
