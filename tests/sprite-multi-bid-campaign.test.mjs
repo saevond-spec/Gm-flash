@@ -87,7 +87,7 @@ test('reject unknown budgets, floor, stale details and unsupported scope',()=>{
  const patches=[
  {budget_cents:null},{floor_cents:null},{floor_cents:900,quote_cents:650},
  {quote_cents:2500},{currency:'EUR'},{simulated:true},
- {escrow_status:'none'},{status:'completed'},
+ {escrow_status:'unknown'},{status:'completed'},
  {self_owned:true},{own_bid_exists:true},{existing_reservation:true},
  {checked_at_sec:NOW-301},{queue_checked_at_sec:NOW-301},
  {zero_incremental_cost:false},{acceptance_coverage_verified:false},
@@ -100,9 +100,31 @@ test('reject unknown budgets, floor, stale details and unsupported scope',()=>{
   assert.equal(r.marketplace_posts,0);
  }
 });
-test('unescrowed jobs remain review-only in earlier triage, never in first live canary',()=>{
- const r=planSpriteMultiBidCycle(fixture({candidates:[task(9101,{escrow_status:'none'})]}));
- assert.equal(r.state,'no_independently_screened_candidate');
+test('explicitly unescrowed task may be considered for independent bid authorization',()=>{
+ for(const status of ['none','unfunded']){
+  const r=planSpriteMultiBidCycle(fixture({candidates:[task(9101,{escrow_status:status})]}));
+  assert.equal(r.state,'candidate_for_independent_approval_only');
+  assert.equal(r.recommendations[0].payment_protection,'unfunded_or_unprotected');
+  assert.equal(r.recommendations[0].buyer_payment_risk,'high');
+  assert.equal(r.recommendations[0].delivery_requires_funding_verification,true);
+  assert.equal(r.marketplace_posts,0);assert.equal(r.can_submit,false);
+ }
+});
+test('funded tasks are ranked ahead of explicitly unfunded tasks; both remain eligible',()=>{
+ const r=planSpriteMultiBidCycle(fixture({candidates:[
+  task(9101,{escrow_status:'none',posted_at_sec:NOW-8000}),
+  task(9102,{escrow_status:'held',posted_at_sec:NOW-1000})]}));
+ assert.equal(r.recommendations[0].problem_id,'9102');
+ assert.equal(r.recommendations[0].payment_protection,'posting_hold_reported_not_payout_guarantee');
+});
+test('unfunded status alone does not excuse missing official budget, quote, floor or scope proof',()=>{
+ for(const patch of [{budget_cents:null},{floor_cents:null},{quote_cents:2500},
+   {accepted_criteria_verified:false},{acceptance_coverage_verified:false},
+   {checked_at_sec:NOW-400},{source:'buyer_text'}]){
+  const r=planSpriteMultiBidCycle(fixture({candidates:[task(9103,{escrow_status:'none',...patch})]}));
+  if(!('accepted_criteria_verified' in patch))
+   assert.equal(r.recommendations.length,0);
+ }
 });
 test('20 otherwise eligible tasks still yield one candidate per dispatch cycle',()=>{
  const candidates=Array.from({length:20},(_,i)=>task(9500+i,{posted_at_sec:NOW-600-i}));
