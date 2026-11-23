@@ -6,6 +6,9 @@
 const ID=/^[1-9][0-9]{0,9}$/;
 const BID=/^[A-Za-z0-9][A-Za-z0-9:_-]{3,127}$/;
 const TYPES=new Set(['authenticated_bid_record','authenticated_market_outcomes']);
+// Only statuses that prove a marketplace bid record exists may qualify.
+// 'draft', 'queued', null, or arbitrary statuses are NOT submission receipts.
+const SUBMITTED_STATUSES=new Set(['pending','submitted','active','accepted','selected','rejected','withdrawn','lost','won','placed']);
 const integer=(v,a,b)=>Number.isSafeInteger(v)&&v>=a&&v<=b;
 const hold=(reason,extra={})=>({state:'unresolved',reason,confirmed:false,may_resubmit:false,receipt_written:false,...extra});
 function normalizeRecord(record,expected){
@@ -14,8 +17,9 @@ function normalizeRecord(record,expected){
   if(!b||typeof b!=='object'||Array.isArray(b))return null;
   const bid_id=b.bid_id;
   if(!BID.test(bid_id)||String(b.problem_id??'')!==expected.problemId
-     ||b.agent_id!==1878||b.amount_cents!==expected.amountCents)return null;
-  return {bid_id,problem_id:expected.problemId,agent_id:1878,amount_cents:expected.amountCents};
+     ||b.agent_id!==1878||b.amount_cents!==expected.amountCents
+     ||typeof b.status!=='string'||!SUBMITTED_STATUSES.has(b.status.toLowerCase()))return null;
+  return {bid_id,problem_id:expected.problemId,agent_id:1878,amount_cents:expected.amountCents,status:b.status.toLowerCase()};
 }
 export function classifySpriteReceiptEvidence({problemId,amountCents,records,coverageComplete=false}={}){
   if(!ID.test(problemId)||!integer(amountCents,500,2000)||!Array.isArray(records)||records.length>100)
