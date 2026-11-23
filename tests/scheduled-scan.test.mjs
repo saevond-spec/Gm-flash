@@ -34,7 +34,7 @@ async function run(f){const saved=globalThis.fetch;globalThis.fetch=f.mock;try{r
 test("scheduled scan distinguishes funded and non-escrow candidates only after authenticated details",async()=>{
  const f=fixture({pages:{1:[row(1,"held",2000,{description:"FICTIONAL_PRIVATE_CANARY"}),row(2,"pending",3000),row(3,"held",499),row(4,"held",10000001),row(5,"held",3500,{simulated:true})]},details:{1:row(1),2:row(2,"pending",3000)}});
  const r=await run(f);
- assert.equal(r.outcome,"scanned");assert.equal(r.records_examined,5);assert.deepEqual(r.candidate_ids,["1"]);
+ assert.equal(r.outcome,"scanned");assert.equal(r.records_examined,5);assert.deepEqual(r.candidate_ids,["2","1"]);
  assert.deepEqual(r.diagnostics.non_escrow_candidate_ids,["2"]);assert.equal(r.funded_candidates,1);assert.equal(r.bids_submitted,0);
  assert.equal(r.diagnostics.detail_probes.length,2);assert.equal(f.writes.length,1);
  assert.ok(!JSON.stringify(f.writes).includes("FICTIONAL_PRIVATE_CANARY"));
@@ -74,15 +74,19 @@ test("missing listing amounts receive bounded detail checks without converting u
  assert.equal(r.diagnostics.detail_probes[1].field_shapes.escrow,"string");assert.equal(r.diagnostics.detail_probes[1].qualified,false);
  assert.ok(!JSON.stringify(r).includes("FICTIONAL_PRIVATE"));assert.ok(!JSON.stringify(f.writes).includes("FICTIONAL_PRIVATE"))
 });
-test("optional escrow is explicit and preserves currency, budget, status, simulation and contradiction gates",()=>{
+test("unescrowed jobs need no opt-in but still require USD budget, open status and non-simulation",()=>{
  const x=row(1,"unfunded",2500);
- assert.equal(qualifyTask(x,"1",2000).eligible,false);
- const q=qualifyTask(x,"1",2000,true);assert.equal(q.eligible,true);assert.equal(q.funding_assessment,"unverified_or_unfunded");assert.equal(q.payment_guaranteed,false);
- for(const invalid of [{...x,currency:"EUR"},{...x,budget_cents:undefined},{...x,status:"closed"},{...x,simulated:true},{...x,escrow_status:"refunded"},{...x,escrow_status:"held",funded:false}]){
-  assert.equal(qualifyTask(invalid,"1",2000,true).eligible,false)
+ assert.equal(qualifyTask(x,"1",2000).eligible,true);
+ const q=qualifyTask(x,"1",2000,true);
+ assert.equal(q.eligible,true);assert.equal(q.funding_assessment,"unverified_or_unfunded");assert.equal(q.payment_guaranteed,false);
+ for(const invalid of [{...x,currency:"EUR"},{...x,budget_cents:undefined},{...x,status:"closed"},{...x,simulated:true}]){
+  assert.equal(qualifyTask(invalid,"1",2000).eligible,false)
  }
- assert.equal(qualifyTask(x,"1",2501,true).eligible,false);
- assert.equal(qualifyTask(x,"1",499,true).eligible,false);
+ for(const allowed of [{...x,escrow_status:"refunded"},{...x,escrow_status:"held",funded:false},{...x,escrow_status:undefined}]){
+  assert.equal(qualifyTask(allowed,"1",2000).eligible,true)
+ }
+ assert.equal(qualifyTask(x,"1",2501).eligible,false);
+ assert.equal(qualifyTask(x,"1",499).eligible,false);
  assert.equal(needsDetail(x),true);
 });
 
@@ -90,7 +94,7 @@ test("unknown listing status triggers detail review, not automatic qualification
  const f=fixture({pages:{1:[{id:501,currency:"USD",escrow_status:"none"},{id:502,currency:"USD",escrow_status:"none"},{id:503,status:"closed",currency:"USD",escrow_status:"none"}]},details:{501:row(501,"none",2500),502:{id:502,currency:"USD",escrow_status:"none",budget_cents:2500}}});
  const r=await run(f);
  assert.deepEqual(r.diagnostics.non_escrow_candidate_ids,["501"]);
- assert.deepEqual(r.candidate_ids,[]);
+ assert.deepEqual(r.candidate_ids,["501"]);
  assert.equal(r.diagnostics.detail_probes.length,2);
  assert.equal(r.diagnostics.detail_probes.find(x=>x.problem_id==="502").qualification_stage,"rejected_identity_status_or_simulation");
  assert.ok(!f.calls.some(x=>x.url.endsWith("/503")));
