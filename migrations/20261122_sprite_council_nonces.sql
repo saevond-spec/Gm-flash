@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS sprite_council_nonce_consumption (
   problem_id TEXT NOT NULL,
   amount_cents INTEGER NOT NULL CHECK(amount_cents BETWEEN 500 AND 2000),
   intent_sha256 TEXT NOT NULL CHECK(length(intent_sha256)=64),
+  proposal_sha256 TEXT NOT NULL CHECK(length(proposal_sha256)=64),
+  expires_at_sec INTEGER NOT NULL CHECK(expires_at_sec>0),
   consumed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS sprite_council_nonce_by_task
