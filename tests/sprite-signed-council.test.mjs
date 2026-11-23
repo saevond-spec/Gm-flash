@@ -46,7 +46,7 @@ test('REAL ED25519 CRYPTO: Nova signature must not verify under operator key',as
  const f=await fixture();
  const r=await verifyIndependentSpriteCouncil({...f,novaPublicKeyB64:f.operatorPublicKeyB64,
   operatorPublicKeyB64:f.novaPublicKeyB64});
- assert.equal(r.reason,'nova_signature_or_binding_invalid');
+ assert.equal(r.reason,'mother_signature_or_binding_invalid');
 });
 test('REAL ED25519 CRYPTO: modified exact task invalidates both signed approvals',async()=>{
  const f=await fixture();
