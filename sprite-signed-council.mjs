@@ -1,5 +1,5 @@
-// Sprite-only cryptographic verifier for two independent council reviewers.
-// The TWO public keys must be supplied by trusted private deployment configuration,
+// Sprite-only cryptographic verifier for THREE independent council reviewers.
+// The THREE public keys must be supplied by trusted private deployment configuration,
 // NEVER by a public request or task description. This module never signs approvals.
 import {canonicalBidIntent} from './council-preflight.mjs';
 
@@ -45,23 +45,26 @@ async function checkApproval({role,approval,intent,keyBytes,nowSec,cryptoApi}){
   }catch{return false}
 }
 export async function verifyIndependentSpriteCouncil({
-  intent,nova,control,novaPublicKeyB64,operatorPublicKeyB64,nowSec,cryptoApi=crypto
+  intent,mother,nova,control,motherPublicKeyB64,novaPublicKeyB64,operatorPublicKeyB64,nowSec,cryptoApi=crypto
 }={}){
   const deny=reason=>({state:'hold',reason,can_submit:false});
   if(!canonicalBidIntent(intent)||!validInt(nowSec,intent?.created_at??0,(intent?.created_at??0)+899)
     ||!DECIMAL.test(intent.problem_id)||intent.problem_id==='3298')
     return deny('intent_invalid_or_legacy');
+  const mKey=decodeBase64Url(motherPublicKeyB64,32);
   const nKey=decodeBase64Url(novaPublicKeyB64,32);
   const oKey=decodeBase64Url(operatorPublicKeyB64,32);
-  if(!nKey||!oKey||equalBytes(nKey,oKey))
-    return deny('distinct_trusted_public_keys_missing');
+  if(!mKey||!nKey||!oKey||equalBytes(mKey,nKey)||equalBytes(mKey,oKey)||equalBytes(nKey,oKey))
+    return deny('three_distinct_trusted_public_keys_missing');
   if(!cryptoApi||!cryptoApi.subtle)return deny('crypto_unavailable');
+  if(!await checkApproval({role:'mother',approval:mother,intent,keyBytes:mKey,nowSec,cryptoApi}))
+    return deny('mother_signature_or_binding_invalid');
   if(!await checkApproval({role:'nova',approval:nova,intent,keyBytes:nKey,nowSec,cryptoApi}))
     return deny('nova_signature_or_binding_invalid');
   if(!await checkApproval({role:'chatgpt_operator',approval:control,intent,keyBytes:oKey,nowSec,cryptoApi}))
     return deny('operator_signature_or_binding_invalid');
   // Independent crypto verification is still not permission to POST:
   // the ledger, task readiness, expiry, and atomic reservation remain required.
-  return {state:'verified_dual_signatures',can_submit:false,
+  return {state:'verified_tripartite_signatures',can_submit:false,
     requires_atomic_reservation:true,problem_id:intent.problem_id};
 }
