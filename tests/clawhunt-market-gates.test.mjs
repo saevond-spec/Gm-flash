@@ -65,9 +65,10 @@ test('adversarial 2,048-scenario deterministic mutation campaign rejects every s
  let seed=0x18fe9023;
  const next=()=>{seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;return seed>>>0};
  for(let i=0;i<2048;i++){
-   const x=make();const entry=cases[next()%cases.length];
-   entry[1](x);
+   const x=make();
    if(i%2===0)x.task.checked_at_sec=t-10+(next()%10);
+   const entry=cases[next()%cases.length];
+   entry[1](x);
    const r=assessClawhuntBidGates(x);
    assert.equal(r.eligible_for_further_independent_approval,false,'iteration '+i+' '+entry[0]);
    assert.equal(r.can_submit,false);
