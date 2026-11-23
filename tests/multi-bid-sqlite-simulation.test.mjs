@@ -71,8 +71,9 @@ const scenario=(task,ledger)=>{
   &&task.currency==='USD'&&task.status==='bidding'&&task.escrow==='held'&&!task.simulated
   &&task.scope&&task.acceptance&&task.isolated&&!task.netCost&&!task.ownBid
   &&task.amount>=task.floor&&task.amount<=task.budget;
- const nova=approval('nova',intent),control=approval('chatgpt_operator',intent);
- return {intent,nova,control,proposalText:proposal,db:ledger,nowSec:NOW+2,
+ const mother=approval('mother',intent),nova=approval('nova',intent),control=approval('chatgpt_operator',intent);
+ return {intent,mother,nova,control,proposalText:proposal,db:ledger,nowSec:NOW+2,
+  verifyMother:async (a,c)=>a.signature===signature('mother',c),
   verifyNova:async (a,c)=>a.signature===signature('nova',c),
   verifyControl:async (a,c)=>a.signature===signature('chatgpt_operator',c),
   readLedger:async id=>ledger.readState(id,intent.nonce),

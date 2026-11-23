@@ -30,13 +30,13 @@ function mockD1(){
 }
 function deps(override={}){
  const x=intent(),db=mockD1();
- const obj={intent:x,nova:approval(x,'nova'),control:approval(x,'chatgpt_operator'),db,nowSec:clock+1,
- verifyNova:async()=>true,verifyControl:async()=>true,
+ const obj={intent:x,mother:approval(x,'mother'),nova:approval(x,'nova'),control:approval(x,'chatgpt_operator'),db,nowSec:clock+1,
+ verifyMother:async()=>true,verifyNova:async()=>true,verifyControl:async()=>true,
  readLedger:async()=>({available:true,blocking_unresolved_bid:false,existing_reservation:false,nonce_seen:false}),
  independentFinalCheck:async()=>true,...override};
  return {args:obj,db};
 }
-test('two verified reviewers + fresh market data reserve one bid, never submit it',async()=>{
+test('three verified reviewers + fresh market data reserve one bid, never submit it',async()=>{
  const {args,db}=deps();
  const r=await authorizeAndReserveBid(args);
  assert.equal(r.state,'reserved_for_one_submission');
@@ -101,7 +101,7 @@ test('missing control approval fails closed',async()=>{
 test('quarantined #3298 cannot be re-bid even with apparent signed approvals',async()=>{
  const {args,db}=deps();
  const legacy={...args.intent,problem_id:'3298'};
- args.intent=legacy;args.nova=approval(legacy,'nova');args.control=approval(legacy,'chatgpt_operator');
+ args.intent=legacy;args.mother=approval(legacy,'mother');args.nova=approval(legacy,'nova');args.control=approval(legacy,'chatgpt_operator');
  const r=await authorizeAndReserveBid(args);
  assert.equal(r.can_submit,false);assert.equal(r.reason,'legacy_bid_3298_held');
  assert.equal(db.state.batches,0);
@@ -109,10 +109,23 @@ test('quarantined #3298 cannot be re-bid even with apparent signed approvals',as
 test('concurrent separately signed tasks reserve at most one unresolved new bid',async()=>{
  const {args,db}=deps();
  const two={...args.intent,problem_id:'9952',nonce:'d'.repeat(32)};
- const args2={...args,intent:two,nova:approval(two,'nova'),control:approval(two,'chatgpt_operator')};
+ const args2={...args,intent:two,mother:approval(two,'mother'),nova:approval(two,'nova'),control:approval(two,'chatgpt_operator')};
  const results=await Promise.all([authorizeAndReserveBid(args),authorizeAndReserveBid(args2)]);
  assert.equal(results.filter(r=>r.reserved).length,1);
  assert.equal(results.filter(r=>!r.can_submit).length,1);
  assert.equal(db.state.reserved.size,1);
  assert.equal(db.state.nonces.size,1);
+});
+
+test('MISSING MOTHER: no reservation or nonce can be consumed',async()=>{
+ const {args,db}=deps({mother:null});
+ const r=await authorizeAndReserveBid(args);
+ assert.equal(r.reason,'mother_approval_missing_or_mismatched');
+ assert.equal(r.can_submit,false);assert.equal(db.state.batches,0);
+});
+test('BAD MOTHER: independent proof failure prevents any ledger reservation',async()=>{
+ const {args,db}=deps({verifyMother:async()=>false});
+ const r=await authorizeAndReserveBid(args);
+ assert.equal(r.reason,'mother_signature_unverified');
+ assert.equal(db.state.batches,0);
 });

@@ -16,22 +16,30 @@ function responseMatches(source,reply,intent,canonical){
 }
 
 export async function requestSpriteCouncilReview({
-  intent,novaService,operatorService,verifyNova,verifyOperator,readLedger,nowSec
+  intent,motherService,novaService,operatorService,verifyMother,verifyNova,verifyOperator,readLedger,nowSec
 }={}){
   const canonical=canonicalBidIntent(intent);
   if(!canonical)return fail('invalid_exact_bid_intent','sprite');
   if(!Number.isSafeInteger(nowSec)||nowSec<intent.created_at||nowSec>=intent.created_at+900)
     return fail('stale_bid_intent','sprite');
   if(intent.problem_id==='3298')return fail('legacy_uncertain_bid','sprite');
-  if(!novaService||typeof novaService.reviewBidIntent!=='function'||
+  if(!motherService||typeof motherService.reviewBidIntent!=='function'||
+     !novaService||typeof novaService.reviewBidIntent!=='function'||
      !operatorService||typeof operatorService.reviewBidIntent!=='function')
     return fail('independent_approval_services_missing','sprite');
-  if(typeof verifyNova!=='function'||typeof verifyOperator!=='function'||typeof readLedger!=='function')
+  if(typeof verifyMother!=='function'||typeof verifyNova!=='function'||typeof verifyOperator!=='function'||typeof readLedger!=='function')
     return fail('independent_signature_verifiers_missing','sprite');
   const packet=Object.freeze({agent_id:1878,action:'submit_bid',problem_id:intent.problem_id,
     amount_cents:intent.amount_cents,canonical_intent:canonical,
     proposal_sha256:intent.proposal_sha256,scope_sha256:intent.scope_sha256,
     nonce:intent.nonce,created_at:intent.created_at});
+  let mother;
+  try{mother=await motherService.reviewBidIntent(packet);}
+  catch{return fail('mother_unavailable','mother');}
+  if(mother?.decision!=='approve')return fail(mother?.decision==='hold'?'mother_governance_hold':'mother_no_approval','mother');
+  if(!responseMatches('mother',mother,intent,canonical))return fail('mother_intent_binding_invalid','mother');
+  try{if(await verifyMother(mother,canonical)!==true)return fail('mother_signature_invalid','mother');}
+  catch{return fail('mother_signature_unavailable','mother');}
   let nova;
   try{nova=await novaService.reviewBidIntent(packet);}
   catch{return fail('nova_unavailable','nova');}
@@ -49,7 +57,7 @@ export async function requestSpriteCouncilReview({
   try{if(await verifyOperator(control,canonical)!==true)return fail('operator_signature_invalid','operator');}
   catch{return fail('operator_signature_unavailable','operator');}
   const preflight=await councilBidPreflight({
-    intent,nova,control,verifyNova,verifyControl:verifyOperator,readLedger,nowSec
+    intent,mother,nova,control,verifyMother,verifyNova,verifyControl:verifyOperator,readLedger,nowSec
   });
   if(preflight.state!=='preflight_passed_not_released')
     return fail(preflight.reason,'preflight');
@@ -57,5 +65,5 @@ export async function requestSpriteCouncilReview({
   // reservation+market check can issue a scoped grant.
   return {state:'independent_reviews_verified',can_submit:false,
     may_release_governance_hold:false,ready_for_atomic_reservation:true,
-    intent,canonical_intent:canonical,nova,control};
+    intent,canonical_intent:canonical,mother,nova,control};
 }

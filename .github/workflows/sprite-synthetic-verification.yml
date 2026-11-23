@@ -6,6 +6,7 @@ on:
       - fix/sprite-council-low-bid-preflight-20261122
       - fix/sprite-low-bids-budget-proof-20261122
       - fix/sprite-discovery-optional-escrow-20261121
+      - fix/sprite-enforce-mother-prod-release-20261123
       - fix/sprite-mother-nova-private-rpc-stage-20261123
       - fix/sprite-receipt-id-interop-20261123
       - fix/sprite-3298-authoritative-source-routing-20261122

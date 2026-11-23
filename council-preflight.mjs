@@ -24,18 +24,20 @@ function approvalMatches(a, reviewer, canonical, nowSec, intent) {
     && int(a.expires_at, nowSec + 1, intent.created_at + 900);
 }
 
-export async function councilBidPreflight({intent, nova, control, verifyNova, verifyControl, readLedger, nowSec}) {
+export async function councilBidPreflight({intent, mother, nova, control, verifyMother, verifyNova, verifyControl, readLedger, nowSec}) {
   const deny = reason => ({state:'hold', reason, can_submit:false, may_release_governance_hold:false});
   const canonical = canonicalBidIntent(intent);
   if (!canonical || !int(nowSec, intent?.created_at ?? 0, (intent?.created_at ?? 0) + 900)) return deny('invalid_or_expired_intent');
   // The original #3298 submission is uncertain. No resubmission path is authorized.
   if(intent.problem_id==='3298')return deny('legacy_bid_3298_held');
+  if (!approvalMatches(mother, 'mother', canonical, nowSec, intent)) return deny('mother_approval_missing_or_mismatched');
   if (!approvalMatches(nova, 'nova', canonical, nowSec, intent)) return deny('nova_approval_missing_or_mismatched');
   if (!approvalMatches(control, 'chatgpt_operator', canonical, nowSec, intent)) return deny('control_approval_missing_or_mismatched');
   // Assertions within JSON are untrusted. Only separately provisioned, strongly authenticated
   // verifier implementations may return true. Never provide user-supplied verifier code in production.
-  if (typeof verifyNova !== 'function' || typeof verifyControl !== 'function' || typeof readLedger !== 'function') return deny('trusted_services_missing');
+  if (typeof verifyMother !== 'function' || typeof verifyNova !== 'function' || typeof verifyControl !== 'function' || typeof readLedger !== 'function') return deny('trusted_services_missing');
   try {
+    if (await verifyMother(mother, canonical) !== true) return deny('mother_signature_unverified');
     if (await verifyNova(nova, canonical) !== true) return deny('nova_signature_unverified');
     if (await verifyControl(control, canonical) !== true) return deny('control_signature_unverified');
     const ledger = await readLedger(intent.problem_id,intent.nonce);
