@@ -5,7 +5,7 @@ Scope: saevond-spec/Gm-flash and the existing Sprite-only Cloudflare gm-flash Wo
 ## Goal and limits
 - User authorizes Sprite to pursue multiple distinct real ClawHunt bids. Start with affordable, achievable **$5–$20** USD quotes and **$0 additional operating spend**. Avoid paid tools, dependency purchases, infrastructure upgrades, and committing to work that needs unlicensed assets.
 - ClawHunt accepts whole-cent **amount** values at POST /api/v1/problems/{id}/bid and expects a substantive plan/message. Never infer a successful bid from HTTP 2xx alone.
-- First canary: **one funded/held task** with original acceptance checks independently verified. Expand to many bids only **sequentially, after authenticated bid receipts** and workload/standing checks. Unescrowed candidates are for review only initially; never start their delivery before independent held-funds confirmation.
+- First canary: **one independently verified eligible task**, with or without accepted-bid escrow. An authenticated explicit unescrowed/unfunded status is not a bid disqualifier; the listing's price, floor, eligibility, acceptance criteria, payment state and workload must still be verified. Label unescrowed bids as **high payment risk**. Expand to multiple distinct bids only **sequentially after authenticated receipts** and capacity checks. Do not begin customer delivery until the award and funding/payment protection are independently verified.
 - No new bid for historical task **#3298 ($6.50 uncertain)** until independently reconciled; keep exact original record quarantined. Different tasks may proceed when otherwise authorized.
 - No promise of selection, acceptance, earnings, or guaranteed payout. Public scoring and instant reviews are not receipts.
 
@@ -41,7 +41,7 @@ Trusted Sprite-only dispatcher (Cloudflare)
 ## Run modes
 1. INSPECT: unauthenticated public discovery OR authenticated read-only GET, heartbeat where authorized; never an external bid.
 2. REHEARSE: independent fictional acceptance work, multi-bid contention/SQLite/D1 probes and audit. All mocks visibly labeled simulation.
-3. CANARY: precisely one live bid after every gate passes; exact authenticated signed reviews and D1 permit, held funds, recognized receipt, spending review.
+3. CANARY: precisely one live bid after every gate passes, whether the verified task currently has a posting hold or explicitly has no funding; signed reviews, exact D1 permit, visible unescrowed payment risk, authoritative receipt and $0 operating spend still required.
 4. SERIAL: up to one new bid with unknown result at a time; after authoritative confirmation and workload check, next distinct candidate. Cron every 15 minutes. Never retry after a lost bid response.
 5. HOLD: fail closed on stale thresholds, errors, D1 migration/version mismatch, unrecognized API shape, reviewer unavailability, invalid currency, floor conflict, unexpected caller, loss of heartbeat, paused standing, quota/capacity exhaustion, or network ambiguity.
 
@@ -49,7 +49,7 @@ Trusted Sprite-only dispatcher (Cloudflare)
 1. Recover and diff the **exact current deployed** gm-flash source in private Sprite-only review. Never push runtime source, tokens, customer briefs, or private code blindly into this public repo; preserve existing safety modules.
 2. Audit and test the real sender route: only internal runtime with protected access can call POST /bid; disable/retire any older direct POST routes that bypass council. Preserve proof the public Internet cannot invoke submission.
 3. Verify API response schemas with authentic read-only requests and pinned parsers: /me, /bids/criteria, /bids/queue, /bids/standing, /problems/{id}, and receipt/outcomes. Unknown field = STOP, not a default.
-4. Confirm the operator's scope limits, price floor, USD cents, current held escrow, deadline, 0 incremental cost, no own bid, and available capacity. Request separate dedicated customer environment only after assignment. Never use customer files within Sprite's source/control ledger.
+4. Confirm the operator's scope limits, price floor, verified USD posting budget, explicit payment/funding state (including **none/unfunded** when authenticated), deadline, $0 incremental cost, no prior bid and workload capacity. Escrow is **not required for submitting a bid**. A posted budget does not itself guarantee settlement. Before starting delivery on an awarded task, recheck actual funding/payment protection; stop delivery if absent. Request separate dedicated customer environment only after assignment. Never use customer files within Sprite's source/control ledger.
 5. Add separate trusted review services and authenticate actual positive, expiring, exact intent signatures. Verify each independently in production; approvals bind agent, task, quote, proposal SHA-256, acceptance/scope SHA-256, nonce and time. An unsigned boolean, screenshot, simulation approval, or user input cannot sign on behalf of Nova/ChatGPT.
 6. Backup D1, inspect existing unique indices and legacy rows, apply the **reviewed** nonce migration only to Sprite D1 after real D1 atomic/concurrent rollback proofs. Preserve #3298; reject any duplicate task or spent nonce. Do not double-reserve through both old and new dispatchers.
 7. Verify D1 reservation cannot create a permit without both authenticated signatures; transition reserved -> uncertain **before** outbound network; exactly one sender POST; no retries on timeout or worker crash.
@@ -58,7 +58,7 @@ Trusted Sprite-only dispatcher (Cloudflare)
 10. Verify $0 spend, client isolation, changeset review, fresh CI, and production rollback. Only then independently approve a dedicated canary deployment. Keep production HOLD=true until all evidence is complete.
 
 ## Bid quality
-- Start with public, clearly scoped simple CSV normalization, deterministic arithmetic reconciliation, or another capability that Sprite can demonstrably deliver within hours and cost $0.
+- Start with public, clearly scoped simple CSV normalization, deterministic arithmetic reconciliation, or another capability that Sprite can demonstrably deliver within hours and cost $0. **Unescrowed jobs are allowed to receive bids** when their public budget and exact authenticated funding status are verified; signal payment risk and do not confuse lack of accepted-bid escrow with lack of posting-time funds.
 - Proposal text is composed privately and reviewed against EACH acceptance criterion: objective, steps, specific deliverable, evidence/check, realistic timeline, exclusions, revisions/dependencies, and no unsupported claims.
 - Respect current ClawHunt minimum message+proposal length from /bids/criteria, not a hardcoded guess. A lower price does not independently improve proposal fit; choose feasible price at/above floor.
 - Follow oldest-first official queue for eligible jobs; do not invent win probabilities. Keep sample/customer data in separate dedicated delivery environments, NOT in shared code, D1, logs, or this public repository.
@@ -73,13 +73,13 @@ Trusted Sprite-only dispatcher (Cloudflare)
 - Response status 201 without authoritative receipt -> remains uncertain; second distinct bid blocked until reconciled.
 - Receipt for another ID, agent, amount or pre-existing timestamp -> cannot clear hold.
 - Legacy 3298 never re-sent, but does not globally bar unrelated verified bids after canary approval.
-- New candidate $5–$20 in USD, source verified, funded, no paid tools, isolated scope -> advisory review (not automatic permission).
+- New candidate $5–$20 in USD, source verified, explicit held **or explicitly unescrowed** state, no paid tools, isolated scope -> advisory review (not automatic permission); report unescrowed payment risk.
 - Multiple sequential bids demonstrated in a D1-equivalent isolated test, zero customer material and zero real spend.
 - Existing production Worker safety regression suite must pass using the exact deployed source and any integrated modules.
 
 ## Release/rollback
 - Deploy progressively: 0% live writes / read-only introspection -> signed-verifier shadow mode -> isolated D1 migration -> one held-funds canary -> independent receipt check -> serial campaigns.
-- Keep emergency hold, route-level deny, D1 reservation preservation, and connection revocation available. Do not delete uncertain rows to unblock throughput.
+- Keep emergency hold, route-level deny, D1 reservation preservation, and connection revocation available. Do not delete uncertain rows to unblock throughput. A bid on an unescrowed task NEVER indicates protected payment or permission to deliver without separate funding verification.
 - Monitoring: last heartbeat; queue scan age; verified candidate count; rejected gate reasons; authorized grants; uncertain/confirmed receipt totals; active awarded orders; settlement; runtime cost. Never retain buyer descriptions or credentials in analytics.
 - Source-of-truth: deployment hash + D1 schema version + authenticated ClawHunt receipts, not GitHub CI alone.
 
