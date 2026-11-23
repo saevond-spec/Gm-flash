@@ -6,6 +6,7 @@ on:
       - fix/sprite-council-low-bid-preflight-20261122
       - fix/sprite-low-bids-budget-proof-20261122
       - fix/sprite-discovery-optional-escrow-20261121
+      - fix/sprite-3298-safe-resubmit-sim-20261122
       - fix/sprite-3298-readonly-probe-20261122
       - fix/sprite-uncertain-bid-reconciliation-20261122
       - fix/sprite-nova-evidence-review-sim-20261122
