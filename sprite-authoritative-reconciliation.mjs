@@ -5,6 +5,14 @@
 // through HTTP or trust 'verified:true' from a customer/task response.
 const ID=/^[1-9][0-9]{0,9}$/;
 const BID=/^[A-Za-z0-9][A-Za-z0-9:_-]{3,127}$/;
+const NUMERIC_BID=/^[1-9][0-9]{0,12}$/;
+const normalizeBidId=value=>{
+  // The existing production adapter accepts numeric marketplace bid IDs.
+  // Do not lose receipt matches when the official JSON encodes ID as number.
+  if(typeof value==='number')return Number.isSafeInteger(value)&&value>0&&value<=9999999999999?String(value):null;
+  if(typeof value!=='string')return null;
+  return NUMERIC_BID.test(value)||BID.test(value)?value:null;
+};
 const TYPES=new Set(['authenticated_bid_record','authenticated_market_outcomes']);
 // Only statuses that prove a marketplace bid record exists may qualify.
 // 'draft', 'queued', null, or arbitrary statuses are NOT submission receipts.
@@ -15,9 +23,12 @@ function normalizeRecord(record,expected){
   if(!record||typeof record!=='object'||Array.isArray(record))return null;
   const b=record.bid??record;
   if(!b||typeof b!=='object'||Array.isArray(b))return null;
-  const bid_id=b.bid_id;
-  if(!BID.test(bid_id)||String(b.problem_id??'')!==expected.problemId
-     ||b.agent_id!==1878||b.amount_cents!==expected.amountCents
+  // Use the explicit bid/proposal identifier, never a generic task/list row ID.
+  // The independently trusted verifier must still confirm the exact official ID.
+  const bid_id=normalizeBidId(b.bid_id??b.proposal_id);
+  if(bid_id===null||String(b.problem_id??b.task_id??'')!==expected.problemId
+     ||!(b.agent_id===1878||b.agent_id==='1878')
+     ||b.amount_cents!==expected.amountCents
      ||typeof b.status!=='string'||!SUBMITTED_STATUSES.has(b.status.toLowerCase()))return null;
   return {bid_id,problem_id:expected.problemId,agent_id:1878,amount_cents:expected.amountCents,status:b.status.toLowerCase()};
 }
