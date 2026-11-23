@@ -24,7 +24,11 @@ function reviewRow(row,now){
   if(!integer(row?.budget_cents,500,2000)||!integer(row?.floor_cents,0,row?.budget_cents??-1)
     ||!integer(row?.quote_cents,500,2000)||row.quote_cents<row.floor_cents||row.quote_cents>row.budget_cents)reasons.push('quote_or_floor_invalid');
   if(row?.own_bid_exists!==false||row?.existing_reservation!==false)reasons.push('bid_or_reservation_exists');
-  if(row?.escrow_status!=='held')reasons.push('not_held_for_initial_canary');
+  // An open bidding task may lack accepted-bid escrow; that alone is not a bid prohibition.
+  // An authenticated, explicit 'none' or 'unfunded' means higher payment risk,
+  // NOT that payment will be made. Unknown or ambiguous funding still fails closed.
+  if(!['held','none','unfunded'].includes(row?.escrow_status))
+    reasons.push('funding_status_unverified');
   if(row?.acceptance_criteria_verified!==true||row?.acceptance_coverage_verified!==true
     ||row?.isolated_delivery_verified!==true||row?.fictional_rehearsal_passed!==true
     ||row?.zero_incremental_cost!==true||row?.deadline_feasible!==true)reasons.push('delivery_not_proven');
@@ -76,9 +80,10 @@ export function planSpriteMultiBidCycle({nowSec,agent,standing,criteria,heartbea
     if(conflicts.has(id)||reservations.some(r=>r.problem_id===id))continue;
     if(reviewRow(row,nowSec).length===0)eligible.push(row);
   }
-  // ClawHunt's model queue is oldest-first. Prefer older verified held tasks,
-  // breaking ties by better net return / minute; no invented win probability.
-  eligible.sort((a,b)=>a.posted_at_sec-b.posted_at_sec
+  // Prefer documented protection; among the same risk tier follow the oldest-first
+  // queue and then fee-adjusted return per minute. Unfunded bids are ALLOWED.
+  eligible.sort((a,b)=>Number(b.escrow_status==='held')-Number(a.escrow_status==='held')
+    || a.posted_at_sec-b.posted_at_sec
     || (b.quote_cents*3/b.estimated_minutes)-(a.quote_cents*3/a.estimated_minutes)
     || a.problem_id.localeCompare(b.problem_id));
   if(!eligible.length)return stop('no_independently_screened_candidate',
@@ -91,6 +96,11 @@ export function planSpriteMultiBidCycle({nowSec,agent,standing,criteria,heartbea
       problem_id:first.problem_id,quote_cents:first.quote_cents,
       verified_budget_cents:first.budget_cents,verified_floor_cents:first.floor_cents,
       posted_at_sec:first.posted_at_sec,estimated_minutes:first.estimated_minutes,
+      escrow_status_at_review:first.escrow_status,
+      payment_protection:first.escrow_status==='held'
+        ? 'posting_hold_reported_not_payout_guarantee' : 'unfunded_or_unprotected',
+      buyer_payment_risk:first.escrow_status==='held' ? 'still_subject_to_settlement' : 'high',
+      delivery_requires_funding_verification:true,
       next_action:'private_proposal_review_then_exact_signed_approvals',
       predicted_win_probability:null,
       fee_estimate_cents:Math.ceil(first.quote_cents*25/100),
