@@ -81,7 +81,7 @@ const scenario=(task,ledger)=>{
 async function tryBid(args,sender){
  const grant=await authorizeAndReserveBid(args);
  if(grant.state!=='reserved_for_one_submission')return {grant,transport:null};
- const transport=await sendReservedBidOnce({db:args.db,nowSec:args.nowSec,grant,proposalText:args.proposalText,send:sender});
+ const transport=await sendReservedBidOnce({db:args.db,trustedNowSec:async()=>args.nowSec,nowSec:args.nowSec,grant,proposalText:args.proposalText,send:sender});
  return {grant,transport};
 }
 test('SIMULATION: 12 sequential distinct $5-$20 bids, 12 exact fictional receipts, legacy #3298 untouched',async()=>{
@@ -192,7 +192,7 @@ test('SIMULATION: proposal text changed after council authorization fails before
   const args=scenario(makeTask(111),db);
   const grant=await authorizeAndReserveBid(args);
   assert.equal(grant.reserved,true);
-  const transport=await sendReservedBidOnce({db,nowSec:NOW+2,grant,proposalText:'Altered proposal with entirely different scope',send:async()=>{sends++}});
+  const transport=await sendReservedBidOnce({db,trustedNowSec:async()=>NOW+2,nowSec:NOW+2,grant,proposalText:'Altered proposal with entirely different scope',send:async()=>{sends++}});
   assert.equal(transport.state,'proposal_hash_mismatch');assert.equal(sends,0);
   assert.equal(db.raw.prepare("SELECT state FROM bid_reservations WHERE problem_id=?").get(args.intent.problem_id).state,'reserved');
  }finally{db.close();}
@@ -267,7 +267,7 @@ test('SIMULATION: approval expires during queued delay; no transport even with s
    const task=makeTask(145),args=scenario(task,db);
    const grant=await authorizeAndReserveBid(args);
    assert.equal(grant.reserved,true);
-   const delayed=await sendReservedBidOnce({db,nowSec:NOW+501,grant,proposalText:args.proposalText,send:async()=>{sends++}});
+   const delayed=await sendReservedBidOnce({db,trustedNowSec:async()=>NOW+501,nowSec:NOW+501,grant,proposalText:args.proposalText,send:async()=>{sends++}});
    assert.equal(delayed.state,'approval_expired_before_send');
    assert.equal(delayed.attempted,false);assert.equal(sends,0);
    assert.equal(db.raw.prepare("SELECT state FROM bid_reservations WHERE problem_id=?").get(task.id).state,'reserved');
