@@ -18,11 +18,10 @@ function mockD1(){
    const [res,used]=stmts;
    const problemId=res.args[0],amount=res.args[1],nonce=used.args[0];
    if(state.nonces.has(nonce))throw Error('UNIQUE nonce constraint');
-   if(state.reserved.has(problemId)||[...state.reserved.values()].some(x=>x.state==='uncertain'||x.state==='reserved')) {
+   if(state.reserved.has(problemId)||[...state.reserved.entries()].some(([id,x])=>id!=='3298'&&(x.state==='uncertain'||x.state==='reserved'))) {
      // A real D1 INSERT ... SELECT returns no reservation, but nonce statement
      // still executes; fail closed, without allowing submission.
-     state.nonces.add(nonce);
-     return [{results:[]},{results:[{nonce}]}];
+     return [{results:[]},{results:[]}];
    }
    state.reserved.set(problemId,{amount,state:'reserved'});state.nonces.add(nonce);
    return [{results:[{problem_id:problemId}]},{results:[{nonce}]}];
@@ -33,7 +32,7 @@ function deps(override={}){
  const x=intent(),db=mockD1();
  const obj={intent:x,nova:approval(x,'nova'),control:approval(x,'chatgpt_operator'),db,nowSec:clock+1,
  verifyNova:async()=>true,verifyControl:async()=>true,
- readLedger:async()=>({available:true,any_unresolved_bid:false,existing_reservation:false,nonce_seen:false}),
+ readLedger:async()=>({available:true,blocking_unresolved_bid:false,existing_reservation:false,nonce_seen:false}),
  independentFinalCheck:async()=>true,...override};
  return {args:obj,db};
 }
@@ -53,11 +52,21 @@ test('same nonce fails closed on second attempt',async()=>{
  assert.equal(r.can_submit,false);assert.equal(r.reason,'atomic_reservation_failed');
  assert.equal(db.state.reserved.size,1);
 });
-test('unknown existing reservation blocks any new submission',async()=>{
+test('legacy uncertain #3298 remains locked but does not block a new distinct task',async()=>{
  const {args,db}=deps();
  db.state.reserved.set('3298',{amount:650,state:'uncertain'});
  const r=await authorizeAndReserveBid(args);
- assert.equal(r.can_submit,false);assert.equal(r.reason,'reservation_or_nonce_not_acquired');
+ assert.equal(r.state,'reserved_for_one_submission');
+ assert.equal(db.state.reserved.get('3298').state,'uncertain');
+ assert.equal(db.state.reserved.get('9951').state,'reserved');
+});
+test('another NEW unresolved reservation blocks further bids',async()=>{
+ const {args,db}=deps();
+ db.state.reserved.set('7777',{amount:700,state:'uncertain'});
+ const r=await authorizeAndReserveBid(args);
+ assert.equal(r.can_submit,false);
+ assert.equal(r.reason,'reservation_or_nonce_not_acquired');
+ assert.equal(db.state.nonces.size,0);
 });
 test('untrusted reviewers cannot promote a preflight',async()=>{
  const {args,db}=deps({verifyNova:async()=>false});
@@ -87,4 +96,23 @@ test('missing control approval fails closed',async()=>{
  const {args,db}=deps({control:null});
  const r=await authorizeAndReserveBid(args);
  assert.equal(r.can_submit,false);assert.equal(db.state.batches,0);
+});
+
+test('quarantined #3298 cannot be re-bid even with apparent signed approvals',async()=>{
+ const {args,db}=deps();
+ const legacy={...args.intent,problem_id:'3298'};
+ args.intent=legacy;args.nova=approval(legacy,'nova');args.control=approval(legacy,'chatgpt_operator');
+ const r=await authorizeAndReserveBid(args);
+ assert.equal(r.can_submit,false);assert.equal(r.reason,'legacy_bid_3298_held');
+ assert.equal(db.state.batches,0);
+});
+test('concurrent separately signed tasks reserve at most one unresolved new bid',async()=>{
+ const {args,db}=deps();
+ const two={...args.intent,problem_id:'9952',nonce:'d'.repeat(32)};
+ const args2={...args,intent:two,nova:approval(two,'nova'),control:approval(two,'chatgpt_operator')};
+ const results=await Promise.all([authorizeAndReserveBid(args),authorizeAndReserveBid(args2)]);
+ assert.equal(results.filter(r=>r.reserved).length,1);
+ assert.equal(results.filter(r=>!r.can_submit).length,1);
+ assert.equal(db.state.reserved.size,1);
+ assert.equal(db.state.nonces.size,1);
 });
