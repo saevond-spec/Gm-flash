@@ -4,7 +4,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {classifySpriteReceiptEvidence,reconcileSpriteUncertainBid} from '../sprite-authoritative-reconciliation.mjs';
 const expected={problemId:'3298',amountCents:650};
 const official=(extra={})=>({source_type:'authenticated_bid_record',authenticated:true,
- bid:{bid_id:'BID-REAL-SHAPED-100',problem_id:'3298',agent_id:1878,amount_cents:650},...extra});
+ bid:{bid_id:'BID-REAL-SHAPED-100',problem_id:'3298',agent_id:1878,amount_cents:650,status:'submitted'},...extra});
 class Ledger{
  constructor(){
   this.raw=new DatabaseSync(':memory:');
@@ -135,4 +135,54 @@ test('REAL SQLITE: malformed caller data or missing trusted services fail closed
     assert.equal(r.confirmed,false);assert.equal(db.current(),'uncertain');
   }
  }finally{db.close()}
+});
+
+
+// These scenarios exposed the previously missing bid-status validation.
+for(const status of [undefined,null,'','draft','queued','unknown','not_submitted',
+  'held','deleted','failed_to_create','awaiting_write','requested']){
+ test('RECEIPT STATUS: '+String(status)+' never qualifies as proof of submission',()=>{
+  const bid={...official().bid,status};
+  const result=classifySpriteReceiptEvidence({...expected,records:[official({bid})]});
+  assert.equal(result.state,'unresolved',String(status));
+  assert.equal(result.confirmed,false);assert.equal(result.may_resubmit,false);
+ });
+}
+for(const status of ['pending','submitted','active','accepted','selected','rejected',
+  'withdrawn','lost','won','placed']){
+ test('RECEIPT STATUS: recognized official '+status+' is still only a candidate',()=>{
+  const bid={...official().bid,status};
+  const result=classifySpriteReceiptEvidence({...expected,records:[official({bid})]});
+  assert.equal(result.state,'exact_receipt_candidate');
+  assert.equal(result.confirmed,false);
+  assert.equal(result.requires_trusted_crypto_or_private_source_verification,true);
+ });
+}
+test('RECEIPT STATUS: an unsubmitted draft cannot become submitted even if verifier mistakenly returns true',async()=>{
+ const db=new Ledger();
+ try{
+  const rec=official({bid:{...official().bid,status:'draft'}});
+  const r=await reconcileSpriteUncertainBid(options(db,[rec],{
+    verifyExactReceipt:async()=>true
+  }));
+  assert.equal(r.confirmed,false);assert.equal(r.may_resubmit,false);
+  assert.equal(db.current(),'uncertain');assert.equal(db.receipts(),0);
+ }finally{db.close();}
+});
+test('RECEIPT STATUS: 512 adversarial statuses never become authenticated bid receipts',()=>{
+ let seed=0x73a95971;
+ const random=()=>{seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;return seed>>>0};
+ const noise=['draft','queued','processing','none','void','error','fake','retry','pending-submission','unsent','cancelled','unknown',null,undefined,12,{},[]];
+ for(let i=0;i<512;i++){
+   const status=noise[random()%noise.length];
+   const r=classifySpriteReceiptEvidence({...expected,records:[official({bid:{...official().bid,status}})]});
+   assert.equal(r.confirmed,false);
+   assert.equal(r.state,'unresolved',String(i));
+   assert.equal(r.may_resubmit,false);
+ }
+});
+test('RECEIPT STATUS: HTTP 403 simulated access denied remains no receipt and no retry',()=>{
+ const result=classifySpriteReceiptEvidence({...expected,records:[],coverageComplete:false});
+ assert.equal(result.reason,'no_authoritative_receipt_candidates');
+ assert.equal(result.may_resubmit,false);assert.equal(result.confirmed,false);
 });
