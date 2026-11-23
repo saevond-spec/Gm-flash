@@ -144,3 +144,65 @@ test('AUTONOMOUS REHEARSAL: 96 round seeded quality-gate campaign never bypasses
  }
  assert.equal(rejected,96);
 });
+
+test('AUTONOMOUS STRESS: 32 concurrent scheduler ticks for 10 funded jobs issue at most one POST',async()=>{
+ const db=new Memory();let sends=0;
+ try{
+  const jobs=Array.from({length:10},(_,i)=>task(String(15001+i),{amount:500+i*100,budget:650+i*100}));
+  const rounds=await Promise.all(Array.from({length:32},()=>tick(db,jobs,T-1,async()=>{
+   sends++;return {status:201};
+  })));
+  assert.equal(rounds.filter(r=>r.sent?.attempted).length,1);
+  assert.equal(sends,1);
+  assert.equal(db.count("SELECT COUNT(*) n FROM sprite_council_nonce_consumption"),1);
+  assert.equal(db.count("SELECT COUNT(*) n FROM bid_reservations WHERE problem_id<>'3298'"),1);
+  assert.equal(db.raw.prepare("SELECT state FROM bid_reservations WHERE problem_id='3298'").get().state,'uncertain');
+ }finally{db.close()}
+});
+test('AUTONOMOUS STRESS: 18 simulated successful cycles always require a distinct exact receipt before advancing',async()=>{
+ const db=new Memory(),jobs=Array.from({length:18},(_,i)=>task(String(16001+i),{
+  amount:500+(i%12)*100,budget:700+(i%12)*100
+ }));
+ let sends=0;
+ try{
+  for(let i=0;i<18;i++){
+   const r=await tick(db,jobs,T-2,async()=>{sends++;return {status:201}});
+   assert.equal(r.sent?.attempted,true);
+   assert.equal(r.task,jobs[i].id);
+   assert.equal(sends,i+1);
+   const blocked=await tick(db,jobs,T-2,async()=>{sends++;return {status:201}});
+   assert.equal(blocked.task,null);assert.equal(sends,i+1);
+   const j=jobs[i];
+   assert.equal(db.acceptFakeReceipt({source:'fictional_authoritative_outcomes',
+    verified:true,agent_id:1878,problem_id:j.id,bid_id:'FAKE-BID-'+j.id,amount_cents:j.amount}),true);
+  }
+  assert.equal(db.count('SELECT COUNT(*) n FROM fake_outcomes'),18);
+  assert.equal(db.count('SELECT COUNT(*) n FROM sprite_council_nonce_consumption'),18);
+  assert.equal(db.raw.prepare("SELECT state FROM bid_reservations WHERE problem_id='3298'").get().state,'uncertain');
+ }finally{db.close()}
+});
+test('AUTONOMOUS STRESS: wrong agent receipt cannot clear unknown bid or unblock another task',async()=>{
+ const db=new Memory();let sends=0;
+ try{
+  const first=task('17001'),other=task('17002');
+  const result=await tick(db,[first,other],T-2,async()=>{sends++;return {status:202}});
+  assert.equal(result.task,'17001');
+  const bad={source:'fictional_authoritative_outcomes',verified:true,agent_id:1879,
+    problem_id:'17001',bid_id:'FAKE-BID-17001',amount_cents:650};
+  assert.equal(db.acceptFakeReceipt(bad),false);
+  assert.equal(db.acceptFakeReceipt({...bad,agent_id:1878,problem_id:'17002',bid_id:'FAKE-BID-17002'}),false);
+  const blocked=await tick(db,[other],T-2,async()=>{sends++;return {status:201}});
+  assert.equal(blocked.task,null);assert.equal(sends,1);
+ }finally{db.close()}
+});
+test('AUTONOMOUS STRESS: repeated listing rows never produce duplicate attempts',async()=>{
+ const db=new Memory();let sends=0;
+ try{
+  const j=task('18001');
+  const list=Array.from({length:80},()=>({...j}));
+  const outcome=await tick(db,list,T-2,async()=>{sends++;return {status:201}});
+  assert.equal(outcome.task,'18001');assert.equal(sends,1);
+  const after=await tick(db,list,T-2,async()=>{sends++;return {status:201}});
+  assert.equal(after.task,null);assert.equal(sends,1);
+ }finally{db.close()}
+});
