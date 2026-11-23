@@ -30,17 +30,23 @@ for(const [name,attrs,reason] of [
  ['unresolved reservation',{has_reservation:true},'prior_bid_unknown'],
  ['simulated',{simulated:true},'simulation_unverified'],
  ['wrong currency',{currency:'EUR'},'currency_unverified'],
- ['unescrowed not opted in',{escrow_status:'none'},'escrow_status_not_verified'],
+ ['unknown escrow state',{escrow_status:'unknown'},'escrow_status_not_verified'],
  ['missing platform limit',{platform_limit_verified:false},'platform_limit_unknown'],
 ]) test('reject '+name,()=>{const r=evaluateLowBidCandidate(valid(attrs),now);assert.equal(r.state,'reject');assert.ok(r.reasons.includes(reason));});
-test('unescrowed optional for review but visibly risky',()=>{
- const r=evaluateLowBidCandidate(valid({escrow_status:'none',allow_unescrowed_review:true}),now);
- assert.equal(r.state,'review_candidate_only');assert.equal(r.escrow_risk,'unescrowed');
+test('explicit no-escrow or unfunded bid review allowed, with high payment risk and no delivery permit',()=>{
+ for(const escrow_status of ['none','unfunded']){
+  const r=evaluateLowBidCandidate(valid({escrow_status}),now);
+  assert.equal(r.state,'review_candidate_only');
+  assert.equal(r.escrow_risk,'unescrowed');
+  assert.equal(r.payment_protection,'unfunded_or_unprotected');
+  assert.equal(r.delivery_requires_funding_verification,true);
+  assert.equal(r.permits_submission,false);
+ }
 });
 test('sort prefers held escrow then verified net per hour, not fictional win chance',()=>{
  const q=[valid({problem_id:'9951',proposed_quote_cents:750,estimated_minutes:60}),
  valid({problem_id:'9952',proposed_quote_cents:1400,verified_budget_cents:1400,estimated_minutes:240}),
- valid({problem_id:'9953',proposed_quote_cents:2000,verified_budget_cents:2000,estimated_minutes:30,escrow_status:'none',allow_unescrowed_review:true})];
+ valid({problem_id:'9953',proposed_quote_cents:2000,verified_budget_cents:2000,estimated_minutes:30,escrow_status:'none'})];
  const r=rankLowBidReview(q,now);assert.deepEqual(r.candidates.map(x=>x.problem_id),['9951','9952','9953']);assert.equal(r.submissions,0);
 });
 test('deduplicates review queue; no customer text copied into output',()=>{
