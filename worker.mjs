@@ -310,7 +310,7 @@ export async function runScheduledScan(env) {
     if(reviewStage==="price_review"&&priceEvidence.state==="listing_price_review")reviewStage="listing_price_review";
     if(["cross_source_conflict","listing_conflict","detail_conflict"].includes(priceEvidence.state))reviewStage="rejected_price_conflict";
     const qualified=reviewStage==="scope_and_readiness_review"&&q.eligible&&autonomousAmountAllowed(q.budget_cents);
-    const nonEscrowQualified=reviewStage==="scope_and_readiness_review"&&!qualified&&optional.eligible&&optional.non_escrow_review_allowed&&autonomousAmountAllowed(optional.budget_cents);
+    const nonEscrowQualified=qualified&&q.non_escrow_review_allowed;
     diagnostics.detail_probes.push({problem_id:id,field_shapes:fundingFieldShape(task),verified_budget_cents:q.budget_cents,escrow_status:q.escrow_status,status:q.status,qualified,non_escrow_qualified:nonEscrowQualified,qualification_stage:reviewStage,budget_evidence_state:optional.budget_evidence_state,price_evidence_state:priceEvidence.state,listing_price_review_cents:priceEvidence.state==="listing_price_review"?priceEvidence.cents:null,reasons:q.reasons});
     if(qualified)eligible.add(id);
     if(nonEscrowQualified)nonEscrow.add(id);
@@ -323,8 +323,12 @@ export async function runScheduledScan(env) {
   diagnostics.qualification_stage_counts={};
   for(const p of diagnostics.detail_probes){const stage=p.qualification_stage??"detail_unavailable";diagnostics.qualification_stage_counts[stage]=(diagnostics.qualification_stage_counts[stage]??0)+1;}
  }catch{outcome="unavailable";}
- const record={observed_at:new Date().toISOString(),outcome,records_examined:examined,funded_candidates:candidates.length,candidate_ids:candidates,bids_submitted:0,diagnostics};
- await env.BID_LEDGER.prepare("INSERT INTO scan_status (id,observed_at,outcome,records_examined,funded_candidates,candidate_ids,bids_submitted,diagnostics_json) VALUES (1,?,?,?,?,?,0,?) ON CONFLICT(id) DO UPDATE SET observed_at=excluded.observed_at,outcome=excluded.outcome,records_examined=excluded.records_examined,funded_candidates=excluded.funded_candidates,candidate_ids=excluded.candidate_ids,bids_submitted=0,diagnostics_json=excluded.diagnostics_json").bind(record.observed_at,outcome,examined,candidates.length,JSON.stringify(candidates),JSON.stringify(diagnostics)).run();
+ // Escrow is not required. This legacy funded_candidates field counts only
+ // held-escrow listings, while candidate_ids also includes unescrowed listings.
+ const heldOnly=diagnostics.detail_probes.filter(p=>p.qualified&&p.escrow_status==='held'&&!p.non_escrow_qualified).length;
+ diagnostics.review_candidate_count=candidates.length;
+ const record={observed_at:new Date().toISOString(),outcome,records_examined:examined,funded_candidates:heldOnly,candidate_ids:candidates,bids_submitted:0,diagnostics};
+ await env.BID_LEDGER.prepare("INSERT INTO scan_status (id,observed_at,outcome,records_examined,funded_candidates,candidate_ids,bids_submitted,diagnostics_json) VALUES (1,?,?,?,?,?,0,?) ON CONFLICT(id) DO UPDATE SET observed_at=excluded.observed_at,outcome=excluded.outcome,records_examined=excluded.records_examined,funded_candidates=excluded.funded_candidates,candidate_ids=excluded.candidate_ids,bids_submitted=0,diagnostics_json=excluded.diagnostics_json").bind(record.observed_at,outcome,examined,heldOnly,JSON.stringify(candidates),JSON.stringify(diagnostics)).run();
  return record;
 }
 export default {
