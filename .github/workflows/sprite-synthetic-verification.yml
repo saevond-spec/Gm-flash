@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - fix/sprite-council-low-bid-preflight-20261122
+      - design/sprite-verified-multi-bid-rollout-20261122
   workflow_dispatch:
 
 concurrency:
@@ -31,5 +32,7 @@ jobs:
           node --check council-preflight.mjs
           node --check council-release.mjs
           node --check low-bid-triage.mjs
+          node --check sprite-multi-bid-campaign.mjs
+          node --check tests/sprite-multi-bid-campaign.test.mjs
       - name: Complete synthetic test suite
         run: node --test tests/*.test.mjs
