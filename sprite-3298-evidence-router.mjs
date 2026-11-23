@@ -14,9 +14,11 @@ const asArray=(r,name)=>{
   if(Array.isArray(r))return r;
   if(!isObj(r))return null;
   const d=isObj(r.data)?r.data:null;
+  const problem=isObj(d?.problem)?d.problem:isObj(r.problem)?r.problem:null;
   const variants=name==='bid_outcomes'?
     [r.outcomes,d?.outcomes,r.items,d?.items,r.results,d?.results,r.data]:
-    [r.bids,d?.bids,r.proposals,d?.proposals,r.items,d?.items,r.results,d?.results,r.data];
+    [r.bids,d?.bids,problem?.bids,r.proposals,d?.proposals,problem?.proposals,
+      r.items,d?.items,r.results,d?.results,r.data];
   return variants.find(Array.isArray)??null;
 };
 const hold=(reason,diagnostics=[])=>({
