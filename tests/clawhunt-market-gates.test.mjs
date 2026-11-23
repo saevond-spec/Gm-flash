@@ -37,7 +37,7 @@ const cases=[
  ['standing belongs to another task',x=>{x.standing.task_id='9992'},'standing_unknown_or_held_back'],
  ['standing has no task identity',x=>{delete x.standing.task_id},'standing_unknown_or_held_back'],
  ['own posted task',x=>{x.task.self_owned=true},'task_status_price_funding_unknown_or_changed'],
- ['funding not confirmed',x=>{x.task.funding_status='none'},'task_status_price_funding_unknown_or_changed'],
+ ['verified budget not present',x=>{x.task.budget_cents=null},'task_status_price_funding_unknown_or_changed'],
  ['price floor rises from $5 to $7',x=>{x.task.price_floor_cents=700},'task_status_price_funding_unknown_or_changed'],
  ['budget drops below $6.50',x=>{x.task.budget_cents=600},'task_status_price_funding_unknown_or_changed'],
  ['task closed',x=>{x.task.status='awarded'},'task_status_price_funding_unknown_or_changed'],
@@ -76,4 +76,26 @@ test('adversarial 2,048-scenario deterministic mutation campaign rejects every s
    assert.equal(r.can_submit,false);
    assert.ok(!JSON.stringify(r).includes(message));
  }
+});
+
+test('unescrowed listing is eligible for independent review and not guaranteed to pay',()=>{
+ const x=make();x.task.funding_status='none';
+ const r=assessClawhuntBidGates(x);
+ assert.equal(r.eligible_for_further_independent_approval,true);
+ assert.equal(r.escrow_observation,'unescrowed');
+ assert.equal(r.payout_is_guaranteed,false);
+ assert.equal(r.can_submit,false);
+});
+test('missing escrow field is not a disqualifier',()=>{
+ const x=make();delete x.task.funding_status;
+ const r=assessClawhuntBidGates(x);
+ assert.equal(r.eligible_for_further_independent_approval,true);
+ assert.equal(r.escrow_observation,'unknown');
+ assert.equal(r.can_submit,false);
+});
+test('unescrowed job still must meet all independent USD budget and scope checks',()=>{
+ const x=make();x.task.funding_status='none';x.task.budget_cents=600;
+ const r=assessClawhuntBidGates(x);
+ assert.equal(r.eligible_for_further_independent_approval,false);
+ assert.equal(r.can_submit,false);
 });
