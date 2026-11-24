@@ -50,7 +50,7 @@ export function validateAIPackage(raw,input,review){
  const proposal=headings.map((h,i)=>h+": "+parts[i]).join("\n");
  const buyer_message=o.buyer_message.trim()+"\n"+quote;
  if(proposal.length>5000||proposal.length<300||buyer_message.length>1000||
-   /(?:placeholder|lorem ipsum|占位)/i.test(proposal+"\n"+buyer_message)||!review(proposal).passed)
+   /(?:placeholder|lorem ipsum|占位|ignore (?:all |the )?(?:previous|prior) instructions|send (?:the |your )?secrets|reveal (?:the |your )?(?:password|key|secret)|system prompt)/i.test(proposal+"\n"+buyer_message)||!review(proposal).passed)
    throw Error("AI draft lacks checkable criteria or exceeds marketplace limits");
  return {proposal,buyer_message,amount_cents:o.amount_cents,hours:o.hours,
    price_basis:o.price_basis,reported_budget_cents:input.reported_budget_cents,
