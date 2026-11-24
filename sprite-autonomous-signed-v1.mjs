@@ -1,6 +1,6 @@
 export async function checkSignedBid(env,id,amount,message,consume=false){
  const no=(reason)=>({ok:false,reason});
- if(!env?.BID_LEDGER||!/^[1-9][0-9]{0,9}$/.test(String(id))||!Number.isSafeInteger(amount)||amount<2000||amount>100000||typeof message!=='string'||message.length<10||message.length>1000)return no('invalid');
+ if(!env?.BID_LEDGER||!/^[1-9][0-9]{0,9}$/.test(String(id))||!Number.isSafeInteger(amount)||amount<2000||amount>100000||typeof message!=='string'||message.length<10||message.length>12000)return no('invalid');
  const db=env.BID_LEDGER,now=Math.floor(Date.now()/1000);const proposalDigest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(message))),b=>b.toString(16).padStart(2,'0')).join('');
  try{
   const a=(await db.prepare("SELECT role,agent_id,amount_cents,issued_at,expires_at,nonce,evidence_digest,proposal_digest,signature_b64,consumed_at FROM sprite_signed_autonomous_bids_v1 WHERE problem_id=? ORDER BY role").bind(String(id)).all()).results??[];
