@@ -53,21 +53,32 @@ async function signed(req, secret, body) {
 let cachedWebhook = {secret:null,until:0};
 const SPRITE_ID = 1878;
 const EXPECTED_HOOK = "https://gm-flash.saevond.workers.dev/cph-webhook";
+let identityInFlight = null;
+// Coalesce concurrent identity probes without caching potentially revoked approval state.
 async function spriteMetadata(env) {
-  if (!env.CPH_API_KEY || !/^cph_/.test(env.CPH_API_KEY)) throw Error("ClawHunt API key is not configured");
-  const controller = new AbortController();
-  const timer = setTimeout(()=>controller.abort(),8000);
-  try {
-    const response = await fetch("https://clawhunt.store/api/v1/me",{
-      method:"GET",redirect:"manual",signal:controller.signal,
-      headers:{"Authorization":"Bearer "+env.CPH_API_KEY,"Accept":"application/json","User-Agent":"gm-flash-sprite/0.3"}
-    });
-    if (response.status!==200) throw Error("ClawHunt identity verification failed");
-    const data=await response.json();
-    const agent=data?.data?.agent??data?.agent;
-    if (Number(agent?.id??agent?.agent_id)!==SPRITE_ID || agent?.name!=="Sprite") throw Error("ClawHunt identity mismatch");
-    return agent;
-  } finally {clearTimeout(timer)}
+  if(identityInFlight)return identityInFlight;
+  const inFlight=(async()=>{
+    if (!env.CPH_API_KEY || !/^cph_/.test(env.CPH_API_KEY)) throw Error("ClawHunt API key is not configured");
+    const controller = new AbortController();
+    const timer = setTimeout(()=>controller.abort(),8000);
+    try {
+      const response = await fetch("https://clawhunt.store/api/v1/me",{
+        method:"GET",redirect:"manual",signal:controller.signal,
+        headers:{"Authorization":"Bearer "+env.CPH_API_KEY,"Accept":"application/json","User-Agent":"gm-flash-sprite/0.3"}
+      });
+      if (response.status!==200) {
+        const e=Error("ClawHunt identity verification failed");
+        e.category=response.status===401?"identity_401":response.status===403?"identity_403":response.status===429?"identity_429":"identity_http_error";
+        throw e;
+      }
+      const data=await response.json();
+      const agent=data?.data?.agent??data?.agent;
+      if (Number(agent?.id??agent?.agent_id)!==SPRITE_ID || agent?.name!=="Sprite") throw Error("ClawHunt identity mismatch");
+      return agent;
+    } finally {clearTimeout(timer)}
+  })();
+  identityInFlight=inFlight;
+  try{return await inFlight;}finally{if(identityInFlight===inFlight)identityInFlight=null;}
 }
 async function signingSecret(env) {
   if (env.CPH_WEBHOOK_SECRET && env.CPH_WEBHOOK_SECRET.length>=32) return env.CPH_WEBHOOK_SECRET;
@@ -82,13 +93,13 @@ async function signingSecret(env) {
 function validBid(b) {
   const id=String(b?.problem_id??"");
   return /^[1-9]\d{0,9}$/.test(id) &&
-    Number.isSafeInteger(b?.amount_cents) && b.amount_cents>=1 && b.amount_cents<=100000 &&
+    Number.isSafeInteger(b?.amount_cents) && b.amount_cents>=2000 && b.amount_cents<=100000 &&
     typeof b?.message==="string" && b.message.length>=10 && b.message.length<=1000;
 }
 
 
 // Operator-authorized autonomy envelope; does not grant spending or start submission.
-export const AUTONOMOUS_BID_POLICY=Object.freeze({operator_authorized:true,authorization_date:"2026-11-21",currency:"USD",min_bid_cents:500,max_bid_cents:10000000,additional_spending_cents:0,require_held_escrow:false,require_funding_before_delivery:false,allow_unfunded_delivery:true,allow_no_escrow_bids:true,require_verified_task_scope:true,require_isolated_delivery_environment:true,require_durable_duplicate_prevention:true,require_verified_platform_limit:true,automatic_submission_enabled:true});
+export const AUTONOMOUS_BID_POLICY=Object.freeze({operator_authorized:true,authorization_date:"2026-11-21",currency:"USD",min_bid_cents:2000,max_bid_cents:10000000,additional_spending_cents:0,require_held_escrow:false,require_funding_before_delivery:false,allow_unfunded_delivery:true,allow_no_escrow_bids:true,require_verified_task_scope:true,require_isolated_delivery_environment:true,require_durable_duplicate_prevention:true,require_verified_platform_limit:true,automatic_submission_enabled:true});
 export function autonomousAmountAllowed(cents){
  return Number.isSafeInteger(cents)&&cents>=AUTONOMOUS_BID_POLICY.min_bid_cents&&cents<=AUTONOMOUS_BID_POLICY.max_bid_cents;
 }
@@ -1614,7 +1625,7 @@ if(path==="/api/scan-status"&&req.method==="GET"){
       if(req.method!=="POST")return json({error:"POST required"},405);
       if(Number(req.headers.get("content-length")||0)>4000)return json({error:"Body too large"},413);
       let b;try{b=await req.json()}catch{return json({error:"Invalid JSON"},400)}
-      if(!validBid(b))return json({error:"Invalid bid: require problem ID, whole-cent amount (1–100000), and 10–1000 character plan"},400);
+      if(!validBid(b))return json({error:"Invalid bid: require problem ID, whole-cent amount (2000–100000), and 10–1000 character plan"},400);
       // Fail closed if the saved credential is not Sprite's approved key.
       const agent=await spriteMetadata(env);
       if(agent.admission_status!=="approved")return json({error:"Sprite is not approved for bidding"},403);
