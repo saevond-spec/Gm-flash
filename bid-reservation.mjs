@@ -3,7 +3,7 @@ import {exactBidReceipt} from "./bid-receipt.mjs";
 // A reservation is irrevocable from application code, even when transport outcome is unknown.
 export async function submitWithReservation(db,problemId,amountCents,send){
  if(!db||typeof db.prepare!=="function")return {attempted:false,state:"ledger_unavailable",http_status:503};
- if(typeof problemId!=="string"||!/^[1-9]\d{0,9}$/.test(problemId)||!Number.isSafeInteger(amountCents)||amountCents<500||amountCents>10000000||typeof send!=="function")return {attempted:false,state:"invalid_reservation",http_status:400};
+ if(typeof problemId!=="string"||!/^[1-9]\d{0,9}$/.test(problemId)||!Number.isSafeInteger(amountCents)||amountCents<2000||amountCents>10000000||typeof send!=="function")return {attempted:false,state:"invalid_reservation",http_status:400};
  let row;
  try{
   row=await db.prepare("INSERT INTO bid_reservations(agent_id,problem_id,amount_cents,state) VALUES(1878,?,?,'reserved') ON CONFLICT(agent_id,problem_id) DO NOTHING RETURNING problem_id").bind(problemId,amountCents).first();
