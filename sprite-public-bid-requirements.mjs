@@ -8,7 +8,7 @@ const valid = value => value.length > 0 && !marker.test(value);
 export function extractPublicBidRequirements(task) {
   const title = clean(task?.title);
   const desc = typeof task?.description === 'string' ? task.description : '';
-  const crit = typeof task?.acceptance_criteria === 'string' ? task.acceptance_criteria : '';
+  const crit = typeof task?.acceptance === 'string' && task.acceptance.trim() ? task.acceptance : (typeof task?.acceptance_criteria === 'string' ? task.acceptance_criteria : '');
   if (!valid(title) || title.length > 180 || desc.length > 24000 || crit.length > 12000)
     throw Error('unverifiable_public_brief');
   const grab=(name, after)=>(desc.match(new RegExp('(?:\\[|【)'+name+'(?:\\]|】)([\\s\\S]*?)(?=(?:\\[|【)'+after+'(?:\\]|】)|$)','i'))?.[1]??'');
