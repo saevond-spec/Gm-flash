@@ -25,7 +25,7 @@ export function normalizeTaskPrice(task, queueRow, {allowUnfunded = true} = {}) 
   const floor = queueRow?.price_floor_cents;
   if (!isCents(floor) || floor > budget) throw err('queue_floor_unverified');
   const computedFloor = Math.min(budget, Math.max(100,Math.ceil(budget * 0.05)));
-  if (floor !== computedFloor) throw err('queue_floor_policy_mismatch');
+  if (floor < computedFloor) throw err('queue_floor_policy_mismatch'); // Task-specific floor may exceed minimum published policy.
   return Object.freeze({problem_id:idString(task.problem_id ?? task.id),budget_cents:budget,floor_cents:floor,funding:funded?'funded':'reference_unheld',source:'authenticated_task_plus_queue',requires_live_recheck:true});
 }
 

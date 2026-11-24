@@ -43,3 +43,9 @@ test('ambiguous network errors stay UNKNOWN and are never retried',async()=>{
  const got=await submitAuthorizedBid({env:{CPH_API_KEY:'cph_mock'},intent:bid,bounds,verifyApproval:async()=>true,ledger:{reserve:async()=>({ok:true,id:'r2'}),markSubmitting:async()=>true,confirm:async()=>{throw Error('no receipt')},unknown:async x=>{states.push(x.reason);return true}},fetchImpl:async()=>{sends++;throw Error('timeout')}});
  assert.equal(got.state,'UNKNOWN');assert.equal(sends,1);assert.equal(states.length,1);
 });
+
+test('authenticated task-specific floor may exceed baseline 5 percent',()=>{
+ const higher=normalizeTaskPrice(task,{...queue,price_floor_cents:500});
+ assert.equal(higher.floor_cents,500);
+ assert.throws(()=>normalizeTaskPrice(task,{...queue,price_floor_cents:100}),/queue_floor_policy_mismatch/);
+});
