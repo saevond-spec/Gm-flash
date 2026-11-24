@@ -4,7 +4,7 @@ export function buildAIPackageInput(task,body){
  if(!["open","bidding"].includes(String(task.status).toLowerCase())||String(task.currency).toLowerCase()!=="usd")throw Error("Task is not open in USD");
  const profile=body.profile;if(!["csv_cleanup","arithmetic_reconciliation"].includes(profile))throw Error("Select a supported capability");
  const reference=Number(body.reference_cents);
- if(!Number.isSafeInteger(reference)||reference<500||reference>100000)throw Error("Enter a proposed quote between $5 and $1,000");
+ if(!Number.isSafeInteger(reference)||reference<2000||reference>100000)throw Error("Enter a proposed quote between $20 and $1,000");
  const budget=Number.isSafeInteger(task.budget_cents)&&task.budget_cents>0?task.budget_cents:null;
  if(budget!==null&&budget<500)throw Error("Reported budget is below $5");
  const count=(v,max)=>Number.isSafeInteger(v)&&v>0&&v<=max?v:null;
@@ -16,7 +16,7 @@ export function validateAIPackage(raw,input,review){
  if(!o||typeof o!=="object"||Array.isArray(o))throw Error("AI response invalid");
  const keys=["relevance","completeness","feasibility","acceptance","verification","scope","buyer_message","price_basis"];
  for(const k of keys)if(typeof o[k]!=="string"||o[k].trim().length<12||o[k].length>(k==="buyer_message"?500:200))throw Error("AI output incomplete: "+k);
- if(!Number.isSafeInteger(o.amount_cents)||o.amount_cents<500||o.amount_cents>input.max_quote_cents||!Number.isSafeInteger(o.hours)||o.hours<1||o.hours>168)throw Error("AI quote or delivery estimate outside verified limits");
+ if(!Number.isSafeInteger(o.amount_cents)||o.amount_cents<2000||o.amount_cents>input.max_quote_cents||!Number.isSafeInteger(o.hours)||o.hours<1||o.hours>168)throw Error("AI quote or delivery estimate outside verified limits");
  const zh=input.language==="zh",q=(o.amount_cents/100).toFixed(2);
  const headings=zh?["目标与相关性","步骤与交付物","可行性与依赖","验收标准","验证与证据","价格与范围"]:["Relevance","Completeness","Feasibility","Acceptance criteria","Verification and evidence","Price and scope"];
  const quote=zh?`USD ${q}；分配及范围确认后预计${o.hours}小时；`:`USD ${q}; estimated ${o.hours} hours after assignment and scope confirmation; `;
@@ -27,16 +27,16 @@ export function validateAIPackage(raw,input,review){
 }
 
 export function boundAutonomousInput(input,row){
- if(!Number.isSafeInteger(row.amount_cents)||row.amount_cents<500||row.amount_cents>input.max_quote_cents||row.amount_cents>row.platform_limit_cents||!Number.isSafeInteger(row.hours)||row.hours<1||row.hours>168||row.cost_cents!==0||row.scope_verified!==1||row.isolated_environment_verified!==1)throw Error("Unverified autonomous terms");
+ if(!Number.isSafeInteger(row.amount_cents)||row.amount_cents<2000||row.amount_cents>input.max_quote_cents||row.amount_cents>row.platform_limit_cents||!Number.isSafeInteger(row.hours)||row.hours<1||row.hours>168||row.cost_cents!==0||row.scope_verified!==1||row.isolated_environment_verified!==1)throw Error("Unverified autonomous terms");
  return {...input,max_quote_cents:row.amount_cents,min_quote_cents:row.amount_cents,fixed_hours:row.hours,reference_hours:row.hours,mode:"autonomous",scope_verified:true};
 }
 export function negotiationInput(input,b){
  if(b.mode!=="negotiation")return input;
  const offered=b.counteroffer_cents,current=b.current_quote_cents;
- if(!Number.isSafeInteger(offered)||offered<1||offered>100000||!Number.isSafeInteger(current)||current<500||current>100000)throw Error("Invalid negotiation amounts");
- return {...input,mode:"negotiation",operator_reported_counteroffer_cents:offered,operator_reported_current_quote_cents:current,min_quote_cents:500,max_quote_cents:Math.min(input.max_quote_cents,current),scope_verified:false};
+ if(!Number.isSafeInteger(offered)||offered<1||offered>100000||!Number.isSafeInteger(current)||current<2000||current>100000)throw Error("Invalid negotiation amounts");
+ return {...input,mode:"negotiation",operator_reported_counteroffer_cents:offered,operator_reported_current_quote_cents:current,min_quote_cents:2000,max_quote_cents:Math.min(input.max_quote_cents,current),scope_verified:false};
 }
 export function validateBoundTerms(draft,input){
- if(!Number.isSafeInteger(draft.amount_cents)||draft.amount_cents<(input.min_quote_cents??500)||draft.amount_cents>input.max_quote_cents||!Number.isSafeInteger(draft.hours)||(input.fixed_hours!==undefined&&draft.hours!==input.fixed_hours))throw Error("AI changed verified terms");
+ if(!Number.isSafeInteger(draft.amount_cents)||draft.amount_cents<(input.min_quote_cents??2000)||draft.amount_cents>input.max_quote_cents||!Number.isSafeInteger(draft.hours)||(input.fixed_hours!==undefined&&draft.hours!==input.fixed_hours))throw Error("AI changed verified terms");
  return draft;
 }
