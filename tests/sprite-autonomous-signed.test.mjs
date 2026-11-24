@@ -2,13 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { webcrypto, generateKeyPairSync, sign as edSign, createHash } from 'node:crypto';
 import { checkSignedBid } from '../sprite-autonomous-signed-v1.mjs';
+import {buildAutonomousClawHuntBidRequest,canonicalSignedClawHuntPayload} from '../clawhunt-bid-contract.mjs';
 
 const hash = x => createHash('sha256').update(x).digest('hex');
 const b64 = b => Buffer.from(b).toString('base64');
 
-function fixture(modify = () => {}) {
+function fixture(modify = () => {}, messageOverride=null) {
   const now = Math.floor(Date.now() / 1000);
-  const id = '4199', amount = 2500, message = 'Relevance: specific CSV cleanup; acceptance verified by independent row counts.';
+  const id = '4199', amount = 2500, message = messageOverride ?? 'Relevance: specific CSV cleanup; acceptance verified by independent row counts.';
   const nonce = 'a'.repeat(32), evidence = hash('fictional-isolated-test'), proposal = hash(message);
   const pairs = ['mother','nova'].map(role => {
     const { publicKey, privateKey } = generateKeyPairSync('ed25519');
@@ -76,4 +77,28 @@ test('duplicate role fails', async()=>{
 test('mismatched signed amount fails', async()=>{
   const x=fixture(p=>{p[1].row.amount_cents=2600});
   assert.equal((await checkSignedBid(x.env,x.id,x.amount,x.message,true)).ok,false);
+});
+
+test('two independent signed approvals cover the exact full marketplace payload',async()=>{
+  const row={amount_cents:2500,hours:3};
+  const draft={
+    amount_cents:2500,hours:3,
+    buyer_message:'I will clean the agreed fictional CSV data and return a detailed verification log.',
+    proposal:'Relevance: remove exact duplicates in the agreed CSV input. Completeness: deliver normalized CSV and an integrity manifest. Feasibility: compare rows deterministically. Acceptance criteria: match declared unique-row counts. Verification and evidence: provide digest and row reconciliation. Price and scope: include only the approved inputs and the quoted three hours.'
+  };
+  const payload=buildAutonomousClawHuntBidRequest(row,draft);
+  const signed=canonicalSignedClawHuntPayload(payload);
+  const x=fixture(()=>{},signed);
+  assert.ok(signed.length>400);
+  assert.equal((await checkSignedBid(x.env,x.id,x.amount,signed,false)).ok,true);
+  for(const key of ['message','proposal_text','estimated_time']){
+    const tampered=canonicalSignedClawHuntPayload({...payload,[key]:payload[key]+' changed'});
+    assert.equal((await checkSignedBid(x.env,x.id,x.amount,tampered,false)).ok,false,key);
+  }
+  assert.equal((await checkSignedBid(x.env,x.id,x.amount,signed,true)).ok,true);
+  assert.equal((await checkSignedBid(x.env,x.id,x.amount,signed,true)).ok,false);
+});
+test('full canonical payload over 12,000 characters cannot enter signer verifier',async()=>{
+  const x=fixture(()=>{},'x'.repeat(12001));
+  assert.equal((await checkSignedBid(x.env,x.id,x.amount,x.message)).ok,false);
 });
