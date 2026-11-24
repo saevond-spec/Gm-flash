@@ -18,7 +18,7 @@
 
 ## Remaining release blockers
 1. PR #19 restores deployed production source but is still draft. Confirm the exact 21-module bundle, Wrangler bindings and D1 schema on a fresh staging Worker.
-2. Run the complete repository test suite plus delegated-gate negatives and strict one-send concurrency. The new test asserts 21 adversarial/positive cases.
+2. Run the complete repository test suite plus delegated-gate negatives and strict one-send concurrency. The new test asserts 22 positive/adversarial cases.
 3. Check `/api/v1/me` returns **Sprite #1878** with approved admission and Bid scope; check authenticated standing, open-order capacity and a heartbeat in the last 14 days.
 4. Build/read a task-specific readiness record for a **real, deliverable task**. Category-only or fictional rehearsal is insufficient. Preserve customer materials in the customer's dedicated environment; send only allowed scalar evidence to the bidding agent.
 5. Update receipt handling to reconcile the confirmed bid ID/amount/agent and mark unknown transport outcomes without retries. Explicitly resolve #3298 before considering that task again.
