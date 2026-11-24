@@ -264,8 +264,12 @@ test("integrated bid-and-solve blocks missing scope approval, unfunded tasks and
 function mockReservationLedger(){
  const rows=new Map();
  return {rows,prepare(sql){return {bind(id,amount){return {
-  async first(){assert.match(sql,/INSERT INTO bid_reservations/);if(rows.has(id))return null;rows.set(id,{amount,state:"reserved"});return {problem_id:id}},
-  async run(){assert.match(sql,/UPDATE bid_reservations/);rows.get(id).state="uncertain";return {success:true}}
+  async first(){
+   if(sql.startsWith("INSERT INTO bid_reservations")){if(rows.has(id))return null;rows.set(id,{amount,state:"reserved"});return {problem_id:id}}
+   if(sql.includes("SET state='submitting'")){const row=rows.get(id);if(!row||row.amount!==amount||row.state!=="reserved")return null;row.state="submitting";return {problem_id:id}}
+   throw Error("Unexpected SQL");
+  },
+  async run(){assert.match(sql,/UPDATE bid_reservations/);if(rows.get(id)?.state==="submitting")rows.get(id).state="uncertain";return {success:true}}
  }}}}};
 }
 test("integrated bid-and-solve sends exactly one simulated bid after all gates pass",async()=>{

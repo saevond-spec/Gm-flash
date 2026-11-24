@@ -1,6 +1,8 @@
+import {generateFictionalUatPolicy,verifyFictionalUatPolicy} from './uat-severity-rehearsal.mjs';
 import {buildDataDelivery} from "./data-delivery.mjs";
 const profiles=Object.freeze({
  csv_cleanup:{label:"CSV cleanup and deduplication",scope:"Only scalar tabular data, exact duplicate removal, CSV export and integrity manifest.",exclusions:["No external scraping","No fuzzy matching","No private or customer data in this environment"],evidence:"Reproducible fictional CSV test, expected row counts and digest"},
+ uat_severity_policy:{label:"Fictional UAT severity criteria and go-live gates",scope:"Four severity levels, eight fictitious examples, priority policy and release-blocking criteria.",exclusions:["No live application testing","No private customer data","No customer approvals or actual go-live decision"],evidence:"Reproducible generic documentation and deterministic priority checks"},
  arithmetic_reconciliation:{label:"Integer-cent reconciliation",scope:"Sum positive and negative integer-cent entries and compare against a declared total.",exclusions:["No bank account access","No tax or accounting certification","No customer data in this environment"],evidence:"Independent expected integer-cent totals"}
 });
 export function reconcile(entries,declared){
@@ -11,6 +13,10 @@ export function reconcile(entries,declared){
 }
 export async function rehearse(profile){
  if(!Object.hasOwn(profiles,profile))throw Error("Unsupported solver profile");
+ if(profile==="uat_severity_policy"){
+ const artifact=generateFictionalUatPolicy();const passed=verifyFictionalUatPolicy(artifact);
+ return {passed,artifact,fixture_only:true,customer_solution_completed:false};
+ }
  if(profile==="csv_cleanup"){
  const result=await buildDataDelivery({source_kind:"fictional",confirm_no_customer_data:true,columns:["item","units"],rows:[{item:"A",units:2},{item:"B",units:5},{item:"A",units:2}]});
  const expected='"item","units"\r\n"A","2"\r\n"B","5"\r\n';
