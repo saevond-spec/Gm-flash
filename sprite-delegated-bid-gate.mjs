@@ -16,7 +16,7 @@ export function evaluateDelegatedBidAuthorization({policy, agent, row, task, ass
   }
   if(row?.scope_verified!==1||row?.isolated_environment_verified!==1||row?.rehearsal_passed!==1||row?.cost_cents!==0)reasons.push('scope_isolation_or_rehearsal_not_verified');
   if(!n(nowSeconds)||!n(row?.verified_at)||!n(row?.valid_until)||row.verified_at>nowSeconds||row.verified_at<nowSeconds-86400||row.valid_until<=nowSeconds||row.valid_until>row.verified_at+86400)reasons.push('readiness_stale');
-  if(!['csv_cleanup','arithmetic_reconciliation'].includes(row?.profile)||!n(row?.hours)||row.hours<1||row.hours>168)reasons.push('unsupported_delivery_profile');
+  if(!['csv_cleanup','arithmetic_reconciliation','uat_severity_policy'].includes(row?.profile)||!n(row?.hours)||row.hours<1||row.hours>168)reasons.push('unsupported_delivery_profile');
   const amount=row?.amount_cents;
   if(!n(amount)||amount<2000||amount>100000||!n(row?.platform_limit_cents)||amount>row.platform_limit_cents)reasons.push('operator_quote_bounds');
   if(assessment?.eligible!==true||assessment?.simulated_flag===true||assessment?.budget_cents!==bounds?.budget_cents||bounds?.ok!==true)reasons.push('live_marketplace_evidence_invalid');
