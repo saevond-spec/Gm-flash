@@ -2,7 +2,7 @@
 -- Before persisting a certificate, a trusted server-side verifier MUST verify its
 -- Ed25519 signature and exact role/action/agent/job/amount/evidence/nonce bindings.
 -- SQLite cannot verify Ed25519 itself; untrusted clients must never receive D1 writes.
--- Reservation uses ONE INSERT; its triggers consume nonce and attach 3 approvals atomically.
+-- Reservation uses ONE INSERT; its triggers consume nonce and attach two independent approvals atomically.
 PRAGMA foreign_keys=ON;
 CREATE TABLE sprite_v2_nonces (
   nonce TEXT PRIMARY KEY CHECK(length(nonce)=32 AND nonce NOT GLOB '*[^0-9a-f]*'),
@@ -11,7 +11,7 @@ CREATE TABLE sprite_v2_nonces (
 );
 CREATE TABLE sprite_v2_approval_certificates (
   approval_id TEXT PRIMARY KEY,
-  role TEXT NOT NULL CHECK(role IN ('mother','nova','operator')),
+  role TEXT NOT NULL CHECK(role IN ('mother','nova')),
   nonce TEXT NOT NULL REFERENCES sprite_v2_nonces(nonce),
   agent_id INTEGER NOT NULL CHECK(agent_id=1878),problem_id TEXT NOT NULL,
   amount_cents INTEGER NOT NULL CHECK(amount_cents BETWEEN 2000 AND 10000000),
@@ -70,16 +70,16 @@ BEGIN
     AND a.amount_cents=NEW.amount_cents AND a.evidence_hash=NEW.evidence_hash
     AND a.proposal_hash=NEW.proposal_hash AND a.expires_at>unixepoch()
     AND NOT EXISTS(SELECT 1 FROM sprite_v2_revocations v
-                   WHERE v.approval_id=a.approval_id))!=3
+                   WHERE v.approval_id=a.approval_id))!=2
  OR (SELECT COUNT(DISTINCT a.role) FROM sprite_v2_approval_certificates a
   WHERE a.nonce=NEW.nonce AND a.agent_id=NEW.agent_id AND a.problem_id=NEW.problem_id
     AND a.amount_cents=NEW.amount_cents AND a.evidence_hash=NEW.evidence_hash
     AND a.proposal_hash=NEW.proposal_hash AND a.expires_at>unixepoch()
     AND NOT EXISTS(SELECT 1 FROM sprite_v2_revocations v
-                   WHERE v.approval_id=a.approval_id))!=3
+                   WHERE v.approval_id=a.approval_id))!=2
  OR NEW.approvals_expire_at!=(SELECT MIN(expires_at)
                                 FROM sprite_v2_approval_certificates WHERE nonce=NEW.nonce)
- THEN RAISE(ABORT,'three_bound_approvals_required') END;
+ THEN RAISE(ABORT,'two_bound_approvals_required') END;
 END;
 CREATE TRIGGER sprite_v2_reserve_write AFTER INSERT ON sprite_v2_reservations
 BEGIN
@@ -113,7 +113,7 @@ BEGIN
       AND a.amount_cents=OLD.amount_cents AND a.evidence_hash=OLD.evidence_hash
       AND a.proposal_hash=OLD.proposal_hash AND a.nonce=OLD.nonce
       AND NOT EXISTS(SELECT 1 FROM sprite_v2_revocations v
-                     WHERE v.approval_id=a.approval_id))!=3
+                     WHERE v.approval_id=a.approval_id))!=2
  THEN RAISE(ABORT,'submit_approvals_expired_or_revoked') END;
 END;
 CREATE TRIGGER sprite_v2_immutable BEFORE UPDATE OF
