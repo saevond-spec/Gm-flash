@@ -18,5 +18,22 @@
     "crons": [
       "*/15 * * * *"
     ]
-  }
+  },
+  "services": [
+    {
+      "binding": "BID_SANDBOX",
+      "service": "sprite-isolation-lab",
+      "environment": "production"
+    },
+    {
+      "binding": "MOTHER_MATH",
+      "service": "mother-coordination",
+      "environment": "production"
+    },
+    {
+      "binding": "NOVA_REVIEW",
+      "service": "nova-verifier",
+      "environment": "production"
+    }
+  ]
 }
