@@ -34,3 +34,21 @@ for(const [name,breakIt,reason] of [
  test('reject '+name,()=>{const x=fixture();breakIt(x);assert.equal(check(x).ok,false);assert.ok(check(x).reasons.includes(reason));});
 }
 test('no external signer or credential field affects authorization',()=>{const x=fixture();x.mother={decision:'hold'};x.nova={decision:'hold'};assert.equal(check(x).ok,true);});
+
+test('25,000 deterministic quote-floor and deadline combinations never authorize out-of-bounds bids',()=>{
+ let seed=0x5eed1234;const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed;};
+ let eligible=0,denied=0;
+ for(let i=0;i<25000;i++){
+  const x=fixture(),budget=2000+random()%98001,floor=Math.max(100,Math.ceil(budget*0.05));
+  const quote=random()%120000;const cap=2000+random()%98001;const deadlineValid=random()%5!==0;
+  x.row.amount_cents=quote;x.row.platform_limit_cents=cap;
+  x.bounds.budget_cents=budget;x.bounds.price_floor_cents=floor;
+  x.assessment.budget_cents=budget;x.payload.amount=quote;
+  x.task.deadline=deadlineValid?'2026-12-21T15:59:59Z':'2026-11-23T15:59:59Z';
+  x.canonicalPayload=JSON.stringify(x.payload);
+  const allowed=deadlineValid&&quote>=2000&&quote<=100000&&quote>=floor&&quote<=budget&&quote<=cap;
+  const actual=check(x);assert.equal(actual.ok,allowed,'iteration '+i+' budget='+budget+' floor='+floor+' quote='+quote+' cap='+cap);
+  if(actual.ok)eligible++;else denied++;
+ }
+ assert.equal(eligible+denied,25000);
+});
