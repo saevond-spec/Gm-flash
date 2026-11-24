@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { webcrypto, generateKeyPairSync, sign as edSign, createHash } from 'node:crypto';
 import { checkSignedBid } from '../sprite-autonomous-signed-v1.mjs';
 
-globalThis.crypto = webcrypto;
 const hash = x => createHash('sha256').update(x).digest('hex');
 const b64 = b => Buffer.from(b).toString('base64');
 
