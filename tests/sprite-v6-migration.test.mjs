@@ -18,7 +18,7 @@ test('D1 migration preserves historical unknown reservation, verified readiness,
  const db=oldDb(),before=db.prepare("SELECT * FROM bid_reservations WHERE problem_id='991099'").get();db.exec(migration);
  assert.deepEqual(db.prepare("SELECT * FROM bid_reservations WHERE problem_id='991099'").get(),before);
  assert.equal(db.prepare("SELECT profile FROM autonomous_readiness WHERE problem_id='991001'").get().profile,'csv_cleanup');
- assert.deepEqual(db.prepare('PRAGMA integrity_check').all(),[{integrity_check:'ok'}]);
+ assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
 });
 test('new UAT readiness profile and SUBMITTING persist with original unique key',()=>{
  const db=oldDb();db.exec(migration);const now=Math.floor(Date.now()/1000);
