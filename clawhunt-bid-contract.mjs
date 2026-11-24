@@ -95,3 +95,45 @@ export function bidGrossNetCents(amount, feeBps = SPRITE_BID_POLICY.platform_fee
   if (!cents(amount) || !Number.isSafeInteger(feeBps) || feeBps < 0 || feeBps > 10000) throw Error('invalid_fee');
   return {gross_cents: amount, estimated_net_after_fee_cents: Math.floor(amount * (10000 - feeBps) / 10000), fee_assumption_bps: feeBps};
 }
+
+export function buildAutonomousClawHuntBidRequest(row, draft) {
+  if (!row || !draft || !Number.isSafeInteger(row.amount_cents) ||
+      row.amount_cents < 2000 || row.amount_cents > 100000 ||
+      draft.amount_cents !== row.amount_cents ||
+      !Number.isSafeInteger(row.hours) || row.hours < 1 || row.hours > 168 ||
+      draft.hours !== row.hours) throw Error('autonomous_terms_unverified');
+  const message = str(draft.buyer_message);
+  const proposal = str(draft.proposal);
+  if (message.length < 10 || message.length > 1000 ||
+      proposal.length < 120 || proposal.length > 5000 ||
+      /(?:placeholder|lorem ipsum|占位)/i.test(message + '\n' + proposal))
+    throw Error('autonomous_copy_invalid');
+  return {
+    amount: row.amount_cents, message, proposal_text: proposal,
+    estimated_time: String(row.hours) + ' hours after assignment and verified scope confirmation'
+  };
+}
+// Canonical signing basis covers EVERY field that the marketplace will receive.
+// The reviewers' v2 proposal_digest must hash this full string, not the proposal alone.
+export function canonicalSignedClawHuntPayload(payload) {
+  if (!payload || !Number.isSafeInteger(payload.amount) ||
+      typeof payload.message !== 'string' || typeof payload.proposal_text !== 'string' ||
+      typeof payload.estimated_time !== 'string' ||
+      Object.keys(payload).some(k => !['amount','message','proposal_text','estimated_time','scope_details'].includes(k)))
+    throw Error('invalid_signed_payload');
+  const fixed = {amount:payload.amount,message:payload.message,
+    proposal_text:payload.proposal_text,estimated_time:payload.estimated_time};
+  if (Object.hasOwn(payload,'scope_details')) {
+    if (!payload.scope_details || typeof payload.scope_details !== 'object' ||
+        Array.isArray(payload.scope_details)) throw Error('invalid_signed_scope');
+    const scope = {};
+    for (const k of ['deliverables','format','exclusions','materials','timeline','revisions','evidence']) {
+      if (Object.hasOwn(payload.scope_details,k)) scope[k]=payload.scope_details[k];
+    }
+    if (Object.keys(scope).length !== Object.keys(payload.scope_details).length) throw Error('unknown_signed_scope_field');
+    fixed.scope_details = scope;
+  }
+  const text = JSON.stringify(fixed);
+  if (text.length < 10 || text.length > 12000) throw Error('signed_payload_length');
+  return text;
+}
