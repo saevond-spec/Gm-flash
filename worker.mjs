@@ -1,4 +1,5 @@
 import {checkSignedBid} from './sprite-autonomous-signed-v1.mjs';
+import {verifiedMarketBounds,buildClawHuntBidRequest} from './clawhunt-bid-contract.mjs';
 import { SPRITE_COUNCIL_VERSION, spriteCouncilSelfTest, evaluateCouncilEvidence, reconcileOutcomes } from './sprite-council-v157.mjs';
 import { strictReceipt3298, classifyReceiptException, spriteSafeRepairSelfTest, SPRITE_REPAIR_SAFE_VERSION } from './sprite-repair-safe-v159.mjs';
 import { POLL_VERSION, guardedBrowse, pollSelfTest } from './sprite-autonomy-poll-v158.mjs';
@@ -112,7 +113,19 @@ export function verifyPriceEvidence(task,quote=null){
  const curr=typeof task?.currency==='string'?task.currency.trim().toLowerCase():'';
  if(curr!=='usd')return {state:'invalid_currency',budget_cents:null};
  const budget=task?.budget_cents;
- if(budget==null)return {state:'missing_explicit_budget',budget_cents:null};
+ if(budget==null){
+   // The official v1 task detail provides price/reference_price in cents, not budget_cents.
+   // Fail closed on unknown escrow state, contradictory units, simulation and price floors.
+   const market=verifiedMarketBounds(task);
+   if(market.ok){
+    if(quote!==null&&(!Number.isSafeInteger(quote)||quote<2000||quote>100000||
+       quote<market.price_floor_cents||quote>market.budget_cents))
+      return {state:'quote_outside_verified_bounds',budget_cents:null};
+    return {state:'clawhunt_v1_contract_verified',budget_cents:market.budget_cents,
+      price_floor_cents:market.price_floor_cents,funding_kind:market.funding_kind};
+   }
+   return {state:'missing_explicit_budget',budget_cents:null};
+  }
  if(!Number.isSafeInteger(budget)||budget<500||budget>10000000)return {state:'invalid_explicit_budget',budget_cents:null};
  const other=task?.posting_budget_cents;
  if(other!=null&&(!Number.isSafeInteger(other)||other<1||other!==budget))return {state:'conflicting_budget_fields',budget_cents:null};
@@ -138,7 +151,7 @@ export function qualifyTask(task,id,amountCents=null){
  if(!held&&!noEscrow&&!postingFunded)reasons.push("escrow_status_ineligible_or_unknown");
  const priceEvidence=verifyPriceEvidence(task,amountCents);
  const budget=priceEvidence.budget_cents;
- if(!['missing_explicit_budget','explicit_budget_verified'].includes(priceEvidence.state))reasons.push('price_evidence_invalid_or_conflicting');
+ if(!['missing_explicit_budget','explicit_budget_verified','clawhunt_v1_contract_verified'].includes(priceEvidence.state))reasons.push('price_evidence_invalid_or_conflicting');
  if(amountCents!==null&&budget===null)reasons.push("verified_budget_cents_required_before_quote");
  if(amountCents!==null&&(!Number.isSafeInteger(amountCents)||amountCents<500||amountCents>100000))reasons.push("quote_outside_executable_range");
  if(amountCents!==null&&budget!==null&&amountCents>budget)reasons.push("bid_above_reported_budget");
@@ -220,7 +233,7 @@ export function needsDetail(x){
 export async function runScheduledScan(env) {
  if(!env.BID_LEDGER)throw Error("Scan ledger unavailable");
  let outcome="unavailable", examined=0, candidates=[];
- const diagnostics={pages_requested:0,pages_with_new_ids:0,unique_records:0,duplicate_records:0,second_page_probe:"not_needed",rejections:{},listing_funding_field_shapes:{},detail_probes:[],public_discovery:[],scanner_revision:"v162-verified-price-required-for-preliminary-review",complete_market_scan:false};
+ const diagnostics={pages_requested:0,pages_with_new_ids:0,unique_records:0,duplicate_records:0,second_page_probe:"not_needed",rejections:{},listing_funding_field_shapes:{},detail_probes:[],public_discovery:[],scanner_revision:"v163-offset-pagination-v1-price-contract",complete_market_scan:false};
  const seen=new Set(), eligible=new Set(), fundedEligible=new Set(), unverifiedEligible=new Set(), ambiguous=[];
  diagnostics.posting_hold_indications=0;
  const ingest=observation=>{
@@ -256,24 +269,24 @@ export async function runScheduledScan(env) {
  try{
   const agent=await spriteMetadata(env);
   if(agent.admission_status!=="approved"||agent.webhook_url!==EXPECTED_HOOK)throw Error("Identity gate");
-  const first=await loadPage("");ingest(first);outcome="scanned";
+  const first=await loadPage("?limit=20&offset=0");ingest(first);outcome="scanned";
   // Undocumented query parameters are experimental GET-only probes, not asserted API support.
   // Stop on repeats, errors or short pages. Never follow arbitrary next URLs.
   let previous={};
   try{const old=await env.BID_LEDGER.prepare("SELECT observed_at,diagnostics_json FROM scan_status WHERE id=1").first();if(old){previous=JSON.parse(old.diagnostics_json??"{}");if(!previous.last_pagination_probe_at&&previous.second_page_probe==="no_new_ids"){previous.last_pagination_probe_at=old.observed_at;previous.last_pagination_probe_outcome="no_new_ids";}}}catch{}
   const t=typeof previous.last_pagination_probe_at==="string"?Date.parse(previous.last_pagination_probe_at):NaN;
   const now=Date.now();
-  const cooldown=previous.last_pagination_probe_outcome==="no_new_ids"&&Number.isFinite(t)&&t<=now&&now-t<3600000;
+  const cooldown=previous.scanner_revision===diagnostics.scanner_revision&&previous.last_pagination_probe_outcome==="no_new_ids"&&Number.isFinite(t)&&t<=now&&now-t<3600000;
   if(Number.isFinite(t)&&t<=now){diagnostics.last_pagination_probe_at=new Date(t).toISOString();diagnostics.last_pagination_probe_outcome=["no_new_ids","new_ids_observed","unavailable"].includes(previous.last_pagination_probe_outcome)?previous.last_pagination_probe_outcome:"unavailable";}
   if(first.records_returned>=20&&cooldown){diagnostics.second_page_probe="cooldown";diagnostics.pagination_requests_avoided=1;}
   else if(first.records_returned>=20){
    try{
-    const next=await loadPage("?page=2&limit=20");
+    const next=await loadPage("?limit=20&offset=20");
     const fresh=ingest(next);
     diagnostics.second_page_probe=fresh>0?"new_ids_observed":"no_new_ids";
     if(fresh>0&&next.records_returned>=20){
      for(let page=3;page<=5;page++){
-      try{const ob=await loadPage("?page="+page+"&limit=20");if(!ingest(ob)||ob.records_returned<20)break;}catch{break;}
+      try{const ob=await loadPage("?limit=20&offset="+((page-1)*20));if(!ingest(ob)||ob.records_returned<20)break;}catch{break;}
      }
     }
    }catch{diagnostics.second_page_probe="unavailable"}
@@ -303,7 +316,7 @@ export async function runScheduledScan(env) {
     const data=await loadJson("/"+id);
     const task=data?.data?.problem??data?.problem??data?.data??data;
     const q=qualifyTask(task,id);
-    const preliminary_eligible=q.eligible&&Number.isSafeInteger(q.budget_cents)&&q.price_verification_state==="explicit_budget_verified";
+    const preliminary_eligible=q.eligible&&Number.isSafeInteger(q.budget_cents)&&['explicit_budget_verified','clawhunt_v1_contract_verified'].includes(q.price_verification_state);
      const verified_price=Number.isSafeInteger(q.budget_cents)&&q.budget_cents>=500&&q.budget_cents<=100000;
      const qualified=preliminary_eligible&&verified_price;
     if(q.posting_funding.posting_hold_indicated)diagnostics.posting_hold_indications++;
@@ -1625,7 +1638,22 @@ if(path==="/api/scan-status"&&req.method==="GET"){
         if(plan.readiness!=="candidate_for_manual_scope_review"||plan.execution_evidence?.passed!==true)return json({error:"Solver readiness gate blocked bid",reasons:plan.reasons,bid_sent:false},409);
       }
       // Every real submission shares one irreversible reservation, including manual bids.
-      const outcome=await submitWithReservation(env.BID_LEDGER,String(b.problem_id),b.amount_cents,()=>call("/api/v1/problems/"+String(b.problem_id)+"/bid","POST",{amount:b.amount_cents,message:b.message}));
+      let marketplacePayload={amount:b.amount_cents,message:b.message};
+      // Rich marketplace bids must be bound to an exact, explicit scope.
+      // Legacy manual payload is preserved until separate signed-authority migration.
+      if(b.proposal_text!==undefined){
+        try{
+          marketplacePayload=buildClawHuntBidRequest({
+            problem_id:id,agent_id:1878,amount_cents:b.amount_cents,
+            buyer_message:b.message,proposal_text:b.proposal_text,
+            estimated_time:b.estimated_time,scope_details:b.scope_details
+          },verifiedMarketBounds(task));
+        }catch{
+          return json({error:"Complete bid proposal or verified marketplace bounds invalid",
+            bid_sent:false},422);
+        }
+      }
+      const outcome=await submitWithReservation(env.BID_LEDGER,String(b.problem_id),b.amount_cents,()=>call("/api/v1/problems/"+String(b.problem_id)+"/bid","POST",marketplacePayload));
       return json({...outcome,submitted:outcome.state==="submitted",submission_confirmed:outcome.state==="submitted",problem_id:String(b.problem_id),amount_cents:b.amount_cents,response_body_withheld:true},outcome.http_status);
     }catch(e){const message=String(e?.message??"Request failed").slice(0,240).replace(/cph_[A-Za-z0-9_-]+/g,"[REDACTED]");return json({error:"Upstream ClawHunt request failed; bid outcome unconfirmed.",failure_type:e?.name??"Error",detail:message,action:"Check ClawHunt dashboard before attempting another bid."},502)}
   }
