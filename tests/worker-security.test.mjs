@@ -280,7 +280,7 @@ test("integrated bid-and-solve sends exactly one simulated bid after all gates p
  const ledger=mockReservationLedger(),env={...fakeEnv(),BID_LEDGER:ledger};
  const r=await auth("/api/bid-solve",{problem_id:"123",amount_cents:2000,message:"Relevance: Complete the fictional reconciliation requested.\nCompleteness: Provide a deterministic report and input totals.\nFeasibility: Use integer-cent arithmetic in a sandbox.\nAcceptance criteria: Match the declared total exactly.\nVerification and evidence: Show checksums and repeatable totals.\nPrice and scope: Deliver in two hours for the approved quote.",profile:"arithmetic_reconciliation",hours:2,cost_cents:0,confirm:"PLACE_BID",confirm_scope_review:true},env);
  assert.equal(r.status,502);const outcome=await r.json();assert.equal(outcome.attempted,true);assert.equal(outcome.requires_reconciliation,true);assert.equal(calls.filter(c=>c.method==="POST").length,1);
- const retry=await auth("/api/bid",{problem_id:"123",amount_cents:2000,message:"Fictional repeated plan",confirm:"PLACE_BID"},env);
+ const retry=await auth("/api/bid",{problem_id:"123",amount_cents:2000,message:"Relevance: Complete the fictional reconciliation requested.\nCompleteness: Provide a deterministic report and input totals.\nFeasibility: Use integer-cent arithmetic in a sandbox.\nAcceptance criteria: Match the declared total exactly.\nVerification and evidence: Show checksums and repeatable totals.\nPrice and scope: Deliver in two hours for the approved quote.",confirm:"PLACE_BID"},env);
  assert.equal(retry.status,409);assert.equal(calls.filter(c=>c.method==="POST").length,1);
  assert.equal(ledger.rows.get("123").state,"uncertain");
  }finally{globalThis.fetch=savedFetch}
