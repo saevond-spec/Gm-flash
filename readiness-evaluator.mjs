@@ -4,7 +4,7 @@ export function evaluateReadiness(e,now){
  if(!e||typeof e!=="object")return {ready:false,reasons:["missing_evidence"]};
  if(typeof e.problem_id!=="string"||!/^[1-9]\d{0,9}$/.test(e.problem_id))reasons.push("identity");
  if(!["csv_cleanup","arithmetic_reconciliation"].includes(e.profile))reasons.push("profile");
- if(!validInt(e.amount_cents,500,100000)||!validInt(e.platform_limit_cents,500,100000000)||e.amount_cents>e.platform_limit_cents)reasons.push("price");
+ if(!validInt(e.amount_cents,2000,100000)||!validInt(e.platform_limit_cents,500,100000000)||e.amount_cents>e.platform_limit_cents)reasons.push("price");
  if(!validInt(e.hours,1,168)||e.cost_cents!==0)reasons.push("cost_or_schedule");
  if(e.scope_verified!==1)reasons.push("scope");
  if(e.isolated_environment_verified!==1)reasons.push("isolation");
