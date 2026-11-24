@@ -1,5 +1,5 @@
 import {checkSignedBid} from './sprite-autonomous-signed-v1.mjs';
-import {verifiedMarketBounds,buildClawHuntBidRequest} from './clawhunt-bid-contract.mjs';
+import {verifiedMarketBounds,buildClawHuntBidRequest,buildAutonomousClawHuntBidRequest,canonicalSignedClawHuntPayload} from './clawhunt-bid-contract.mjs';
 import { SPRITE_COUNCIL_VERSION, spriteCouncilSelfTest, evaluateCouncilEvidence, reconcileOutcomes } from './sprite-council-v157.mjs';
 import { strictReceipt3298, classifyReceiptException, spriteSafeRepairSelfTest, SPRITE_REPAIR_SAFE_VERSION } from './sprite-repair-safe-v159.mjs';
 import { POLL_VERSION, guardedBrowse, pollSelfTest } from './sprite-autonomy-poll-v158.mjs';
@@ -394,16 +394,22 @@ export async function dispatchAutonomous(env,record,deps) {
  if(!draft||draft.ai_used!==true||!reviewStructure(draft.proposal).passed||draft.amount_cents!==row.amount_cents||draft.hours!==row.hours||draft.proposal.length>1000)return {state:"ai_proposal_validation_failed",attempted:false};
  if(!validAutonomousReadiness(row,ids,Math.floor(Date.now()/1000)))return {state:"readiness_expired_after_ai",attempted:false};
  const latestTask=await deps.detail(env,row.problem_id);if(String(latestTask?.currency??"").toUpperCase()!=="USD"||!deps.qualify(latestTask,row.problem_id,row.amount_cents).eligible)return {state:"eligibility_changed_after_ai",attempted:false};
- const message=draft.proposal;const council=await checkSignedBid(env,row.problem_id,row.amount_cents,message,false);if(!council.ok){await spriteCouncilHold(env,'autonomous_dispatch',row.problem_id,row.amount_cents);return {state:'signed_council_intent_approval_required',attempted:false,problem_id:row.problem_id};}
+ let signedPayload,canonicalPayload;
+ try{signedPayload=buildAutonomousClawHuntBidRequest(row,draft);canonicalPayload=canonicalSignedClawHuntPayload(signedPayload)}
+ catch{return {state:'signed_payload_validation_failed',attempted:false,problem_id:row.problem_id};}
+ const council=await checkSignedBid(env,row.problem_id,row.amount_cents,canonicalPayload,false);if(!council.ok){await spriteCouncilHold(env,'autonomous_dispatch',row.problem_id,row.amount_cents);return {state:'signed_council_intent_approval_required',attempted:false,problem_id:row.problem_id};}
  // Per-task idempotency: UNIQUE(agent_id,problem_id) in submitWithReservation blocks duplicate same-task sends.
  // An uncertain bid on a different task must not freeze unrelated work.
- const result=await deps.reserve(db,row.problem_id,row.amount_cents,()=>deps.send(env,row.problem_id,row.amount_cents,message,{autonomousSigned:true}));
+ const result=await deps.reserve(db,row.problem_id,row.amount_cents,()=>deps.send(env,row.problem_id,row.amount_cents,canonicalPayload,{autonomousSigned:true,signedPayload}));
   return {state:result.state,attempted:result.attempted===true,problem_id:row.problem_id,upstream_status:result.upstream_status??null,confirmed:result.state==="submitted"};
 }
-async function autoRequest(env,id,amount,message,{fullDetail=false,autonomousSigned=false}={}){
- if(amount!==undefined){if(!autonomousSigned||!Number.isSafeInteger(amount)||amount<2000||amount>100000||typeof message!=='string'||message.length<10||message.length>1000){await spriteCouncilHold(env,'submit_bid',String(id),amount);return {ok:false,status:423,data:{error:'Autonomous signed approval required'},bid_sent:false};}const auth=await checkSignedBid(env,String(id),amount,message,true);if(!auth.ok){await spriteCouncilHold(env,'submit_bid',String(id),amount);return {ok:false,status:423,data:{error:'Two fresh independent signed approvals required'},bid_sent:false};}}
+async function autoRequest(env,id,amount,message,{fullDetail=false,autonomousSigned=false,signedPayload=null}={}){
+ if(amount!==undefined){if(!autonomousSigned||!Number.isSafeInteger(amount)||amount<2000||amount>100000||typeof message!=='string'||message.length<10||message.length>12000||!signedPayload||signedPayload.amount!==amount){await spriteCouncilHold(env,'submit_bid',String(id),amount);return {ok:false,status:423,data:{error:'Autonomous signed approval required'},bid_sent:false};}let canonical;
+  try{canonical=canonicalSignedClawHuntPayload(signedPayload)}catch{return {ok:false,status:423,data:{error:'Unverified full submission payload'},bid_sent:false};}
+  if(canonical!==message)return {ok:false,status:423,data:{error:'Signed payload mismatch'},bid_sent:false};
+  const auth=await checkSignedBid(env,String(id),amount,message,true);if(!auth.ok){await spriteCouncilHold(env,'submit_bid',String(id),amount);return {ok:false,status:423,data:{error:'Two fresh independent signed approvals required'},bid_sent:false};}}
  const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),8000);
- try{const r=await fetch("https://clawhunt.store/api/v1/problems/"+id+(amount===undefined?"":"/bid"),{method:amount===undefined?"GET":"POST",redirect:"manual",signal:controller.signal,headers:{"Authorization":"Bearer "+env.CPH_API_KEY,"Accept":"application/json","Content-Type":"application/json","User-Agent":"gm-flash-sprite/0.6"},...(amount===undefined?{}:{body:JSON.stringify({amount,message})})});
+ try{const r=await fetch("https://clawhunt.store/api/v1/problems/"+id+(amount===undefined?"":"/bid"),{method:amount===undefined?"GET":"POST",redirect:"manual",signal:controller.signal,headers:{"Authorization":"Bearer "+env.CPH_API_KEY,"Accept":"application/json","Content-Type":"application/json","User-Agent":"gm-flash-sprite/0.6"},...(amount===undefined?{}:{body:message})});
  if(amount!==undefined){let data=null;try{const reader=r.body.getReader();let size=0,raw="";const decoder=new TextDecoder();try{for(;;){const x=await reader.read();if(x.done)break;size+=x.value.byteLength;if(size>32768)throw Error("Oversize receipt");raw+=decoder.decode(x.value,{stream:true});}raw+=decoder.decode();data=JSON.parse(raw);}finally{await reader.cancel().catch(()=>{});}}catch{}return {ok:r.ok,status:r.status,data};}
  if(r.status!==200)throw Error("Detail unavailable");const reader=r.body.getReader();let size=0,raw="";const decoder=new TextDecoder();try{for(;;){const x=await reader.read();if(x.done)break;size+=x.value.byteLength;if(size>262144)throw Error("Oversize detail");raw+=decoder.decode(x.value,{stream:true});}raw+=decoder.decode();}finally{await reader.cancel().catch(()=>{});}const x=JSON.parse(raw);return fullDetail?x:(x?.data?.problem??x?.problem??x?.data??x);
  }finally{clearTimeout(timer);}
