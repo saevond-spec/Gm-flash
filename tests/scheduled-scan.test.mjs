@@ -9,7 +9,7 @@ function fixture(agentId=1878){
  const mock=async(url,opts)=>{
   calls.push({url:String(url),method:opts.method});
   if(String(url)===base+"/api/v1/me")return Response.json({data:{agent:{id:agentId,name:"Sprite",admission_status:"approved",webhook_url:hook}}});
-  if(String(url)===base+"/api/v1/problems")return Response.json({data:{problems:[
+  if(String(url).startsWith(base+"/api/v1/problems?"))return Response.json({data:{problems:[
    {id:1,status:"open",escrow_status:"held",budget_cents:2000,description:"FICTIONAL_PRIVATE_CANARY"},
    {id:2,status:"open",escrow_status:"pending",budget_cents:3000},
    {id:3,status:"open",escrow_status:"held",budget_cents:1999},
@@ -39,8 +39,8 @@ test("pagination probes expand verified unique IDs and stop on a repeated page",
  globalThis.fetch=async(url,opts)=>{
   if(String(url).endsWith("/me"))return f.mock(url,opts);
   f.calls.push({url:String(url),method:opts.method});
-  const n=new URL(url).searchParams.get("page");
-  return Response.json({data:{problems:page(n?21:1)}});
+  const n=Number(new URL(url).searchParams.get("offset")??0);
+  return Response.json({data:{problems:page(n>=20?21:1)}});
  };
  try{
   const r=await runScheduledScan(f.env);
@@ -65,7 +65,7 @@ test("missing listing funding fields trigger bounded detail checks, without infe
  globalThis.fetch=async(url,opts)=>{
   if(String(url).endsWith("/me"))return f.mock(url,opts);
   f.calls.push({url:String(url),method:opts.method});
-  if(String(url).endsWith("/problems"))return Response.json({data:{problems:[1,2,3,4].map(id=>({id,status:"open",budget:25,description:"FICTIONAL_PRIVATE_LIST"}))}});
+  if(String(url).includes("/api/v1/problems?"))return Response.json({data:{problems:[1,2,3,4].map(id=>({id,status:"open",budget:25,description:"FICTIONAL_PRIVATE_LIST"}))}});
   const id=Number(String(url).split("/").pop());
   return Response.json({data:{problem:id===1?{id,status:"open",budget_cents:2500,escrow_status:"held",description:"FICTIONAL_PRIVATE_DETAIL"}:{id,status:"open",budget:25,escrow:"FICTIONAL_PRIVATE_UNVERIFIED"}}});
  };
