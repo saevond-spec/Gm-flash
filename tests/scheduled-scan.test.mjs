@@ -72,7 +72,7 @@ test("missing listing funding fields trigger bounded detail checks, without infe
   f.calls.push({url:String(url),method:opts.method});
   if(String(url).includes("/api/v1/problems?"))return Response.json({data:{problems:[1,2,3,4].map(id=>({id,status:"open",budget:25,description:"FICTIONAL_PRIVATE_LIST"}))}});
   const id=Number(String(url).split("/").pop());
-  return Response.json({data:{problem:id===1?{id,status:"open",budget_cents:2500,escrow_status:"held",description:"FICTIONAL_PRIVATE_DETAIL"}:{id,status:"open",budget:25,escrow:"FICTIONAL_PRIVATE_UNVERIFIED"}}});
+  return Response.json({data:{problem:id===1?{id,status:"open",currency:"USD",budget_cents:2500,escrow_status:"held",description:"FICTIONAL_PRIVATE_DETAIL"}:{id,status:"open",budget:25,escrow:"FICTIONAL_PRIVATE_UNVERIFIED"}}});
  };
  try{
   const r=await runScheduledScan(f.env);
