@@ -36,6 +36,15 @@ test('parse all four exact acceptance criteria and public scope; never include u
  assert.equal(x.source,'public_clawhunt_task_only');
  assert.equal(JSON.stringify(x).includes('PUBLIC CONTEXT'),false);
 });
+test('actual ClawHunt v1 schema: acceptance field overrides fixture-only acceptance_criteria',()=>{
+ const realShape={...task,acceptance:task.acceptance_criteria,acceptance_criteria:undefined,
+  description:'[Project Background] Public fictional UAT task.\\n[Scope of This Ticket] Define four severity levels and two examples each, priority P0-P3 and release blockers.\\n[Deliverables] Determination criteria, go-live blocking conditions.\\n[Dependencies] None.'};
+ const x=extractPublicBidRequirements(realShape);
+ assert.equal(x.public_criteria.length,4);
+ assert.match(x.public_scope,/severity levels/);
+ assert.match(x.public_deliverables,/go-live blocking/);
+ assert.throws(()=>extractPublicBidRequirements({...realShape,acceptance:''}),/unverifiable_acceptance_criteria/);
+});
 test('reject missing or prompt-injected task criteria before autonomous proposal',()=>{
  for(const t of [
   {...task,acceptance_criteria:''},
