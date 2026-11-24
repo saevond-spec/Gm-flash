@@ -1,4 +1,4 @@
-import {checkSignedBid} from './sprite-autonomous-signed-v1.mjs';
+import {evaluateDelegatedBidAuthorization} from './sprite-delegated-bid-gate.mjs';
 import {verifiedMarketBounds,buildClawHuntBidRequest,buildAutonomousClawHuntBidRequest,canonicalSignedClawHuntPayload} from './clawhunt-bid-contract.mjs';
 import { SPRITE_COUNCIL_VERSION, spriteCouncilSelfTest, evaluateCouncilEvidence, reconcileOutcomes } from './sprite-council-v157.mjs';
 import { strictReceipt3298, classifyReceiptException, spriteSafeRepairSelfTest, SPRITE_REPAIR_SAFE_VERSION } from './sprite-repair-safe-v159.mjs';
@@ -397,17 +397,33 @@ export async function dispatchAutonomous(env,record,deps) {
  let signedPayload,canonicalPayload;
  try{signedPayload=buildAutonomousClawHuntBidRequest(row,draft);canonicalPayload=canonicalSignedClawHuntPayload(signedPayload)}
  catch{return {state:'signed_payload_validation_failed',attempted:false,problem_id:row.problem_id};}
- const council=await checkSignedBid(env,row.problem_id,row.amount_cents,canonicalPayload,false);if(!council.ok){await spriteCouncilHold(env,'autonomous_dispatch',row.problem_id,row.amount_cents);return {state:'signed_council_intent_approval_required',attempted:false,problem_id:row.problem_id};}
+ // User-delegated Sprite-only autonomy: Mother/Nova remain advisory, never a v1/v2 signature deadlock.
+ // Fresh issuer-independent task bounds, row attestation and own ClawHunt identity still gate every send.
+ const bounds=verifiedMarketBounds(latestTask);
+ const delegation=evaluateDelegatedBidAuthorization({
+  policy:AUTONOMOUS_BID_POLICY,agent,row,task:latestTask,
+  assessment:deps.qualify(latestTask,row.problem_id,row.amount_cents),
+  bounds,payload:signedPayload,canonicalPayload,nowSeconds:Math.floor(Date.now()/1000)
+ });
+ if(!delegation.ok)return {state:'delegated_bid_preflight_held',attempted:false,problem_id:row.problem_id,reasons:delegation.reasons};
  // Per-task idempotency: UNIQUE(agent_id,problem_id) in submitWithReservation blocks duplicate same-task sends.
  // An uncertain bid on a different task must not freeze unrelated work.
- const result=await deps.reserve(db,row.problem_id,row.amount_cents,()=>deps.send(env,row.problem_id,row.amount_cents,canonicalPayload,{autonomousSigned:true,signedPayload}));
+ const result=await deps.reserve(db,row.problem_id,row.amount_cents,()=>deps.send(env,row.problem_id,row.amount_cents,canonicalPayload,{operatorDelegated:true,bidPayload:signedPayload}));
   return {state:result.state,attempted:result.attempted===true,problem_id:row.problem_id,upstream_status:result.upstream_status??null,confirmed:result.state==="submitted"};
 }
-async function autoRequest(env,id,amount,message,{fullDetail=false,autonomousSigned=false,signedPayload=null}={}){
- if(amount!==undefined){if(!autonomousSigned||!Number.isSafeInteger(amount)||amount<2000||amount>100000||typeof message!=='string'||message.length<10||message.length>12000||!signedPayload||signedPayload.amount!==amount){await spriteCouncilHold(env,'submit_bid',String(id),amount);return {ok:false,status:423,data:{error:'Autonomous signed approval required'},bid_sent:false};}let canonical;
-  try{canonical=canonicalSignedClawHuntPayload(signedPayload)}catch{return {ok:false,status:423,data:{error:'Unverified full submission payload'},bid_sent:false};}
-  if(canonical!==message)return {ok:false,status:423,data:{error:'Signed payload mismatch'},bid_sent:false};
-  const auth=await checkSignedBid(env,String(id),amount,message,true);if(!auth.ok){await spriteCouncilHold(env,'submit_bid',String(id),amount);return {ok:false,status:423,data:{error:'Two fresh independent signed approvals required'},bid_sent:false};}}
+async function autoRequest(env,id,amount,message,{fullDetail=false,operatorDelegated=false,bidPayload=null}={}){
+ // This routine is private to the Worker. The delegated flag is supplied only from
+ // dispatchAutonomous AFTER verifying the D1 readiness row, own agent identity and fresh task.
+ if(amount!==undefined){
+  if(!operatorDelegated||!Number.isSafeInteger(amount)||amount<2000||amount>100000||
+     typeof message!=='string'||message.length<120||message.length>12000||
+     !bidPayload||bidPayload.amount!==amount)
+    return {ok:false,status:423,data:{error:'Verified delegated-bid preflight required'},bid_sent:false};
+  let canonical;
+  try{canonical=canonicalSignedClawHuntPayload(bidPayload)}
+  catch{return {ok:false,status:423,data:{error:'Invalid frozen ClawHunt bid payload'},bid_sent:false};}
+  if(canonical!==message)return {ok:false,status:423,data:{error:'Bid payload changed after review'},bid_sent:false};
+ }
  const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),8000);
  try{const r=await fetch("https://clawhunt.store/api/v1/problems/"+id+(amount===undefined?"":"/bid"),{method:amount===undefined?"GET":"POST",redirect:"manual",signal:controller.signal,headers:{"Authorization":"Bearer "+env.CPH_API_KEY,"Accept":"application/json","Content-Type":"application/json","User-Agent":"gm-flash-sprite/0.6"},...(amount===undefined?{}:{body:message})});
  if(amount!==undefined){let data=null;try{const reader=r.body.getReader();let size=0,raw="";const decoder=new TextDecoder();try{for(;;){const x=await reader.read();if(x.done)break;size+=x.value.byteLength;if(size>32768)throw Error("Oversize receipt");raw+=decoder.decode(x.value,{stream:true});}raw+=decoder.decode();data=JSON.parse(raw);}finally{await reader.cancel().catch(()=>{});}}catch{}return {ok:r.ok,status:r.status,data};}
@@ -1457,7 +1473,7 @@ if(path==="/api/council-diagnostics"&&req.method==="GET"){
   if((scan?.funded_candidates??0)===0)blockers.push('no_current_eligible_marketplace_candidate');
   if(price?.price_unit_hypothesis==='unresolved'||price?.budget_cents==null)blockers.push('marketplace_price_unit_unverified');
   if(history?.http_status===403)blockers.push('bid_history_read_forbidden');
-  blockers.push('autonomous_signed_council_write_approval_not_implemented');
+  if((readiness?.n??0)===0)blockers.push('fresh_operator_verified_scope_readiness_required');
   return json({service:'Sprite',status:'manual_bid_enabled_autonomous_held',marketplace_write_enabled:true,manual_bid_confirmation_required:true,bid_sent:false,blockers,previous_reservation:prior??null,verified_readiness_count:readiness?.n??0,recorded_bid_receipts:receipt?.n??0,latest_scan:scan??null,latest_receipt_probe:recon??null,mother_method_probe:mother??null,authenticated_bid_history_probe:history??null,price_evidence_probe:price??null,next_review_candidate:review??null,no_customer_data_collected:true});
  }catch{return json({error:'Diagnostics unavailable',marketplace_write_enabled:false},503);}
 }
@@ -1465,7 +1481,7 @@ if(path==="/api/scan-status"&&req.method==="GET"){
    if(!(await tokenOkay(req.headers.get("x-control-token"),env.CONTROL_TOKEN)))return json({error:"Unauthorized"},401);
    if(!env.BID_LEDGER)return json({error:"Scan ledger unavailable"},503);
    const row=await env.BID_LEDGER.prepare("SELECT observed_at,outcome,records_examined,funded_candidates,candidate_ids,bids_submitted,diagnostics_json FROM scan_status WHERE id=1").first();
-   const early=await env.BID_LEDGER.prepare("SELECT problem_id,state,priority,reason,category,budget_cents FROM sprite_early_ai_review WHERE day=? ORDER BY priority,problem_id LIMIT 4").bind(new Date().toISOString().slice(0,10)).all();return json({early_ai_review:early.results??[],mode:"manual_bidding_enabled_autonomy_held",last_scan:row??null,operator_authorized:AUTONOMOUS_BID_POLICY.operator_authorized,automatic_bidding:false,council_write_gate_active:true,customer_execution:false});
+   const early=await env.BID_LEDGER.prepare("SELECT problem_id,state,priority,reason,category,budget_cents FROM sprite_early_ai_review WHERE day=? ORDER BY priority,problem_id LIMIT 4").bind(new Date().toISOString().slice(0,10)).all();return json({early_ai_review:early.results??[],mode:"manual_bidding_enabled_autonomy_held",last_scan:row??null,operator_authorized:AUTONOMOUS_BID_POLICY.operator_authorized,automatic_bidding:false,council_write_gate_active:false,operator_delegation_scope_gate_active:true,customer_execution:false});
   }
 
   if(/^\/api\/(?:customer(?:-execution|-files|-upload|-job)?|job-files|job-upload)(?:\/|$)/i.test(path))return json({error:"Customer material must remain in a dedicated verified job environment. This control plane accepts none.",customer_execution_allowed:false},403);
