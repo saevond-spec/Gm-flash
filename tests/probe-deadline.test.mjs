@@ -28,3 +28,23 @@ test("exhausted deadline does not invoke operation",async()=>{
  let now=0;const d=makeProbeDeadline(()=>now);now=13000;
  let called=false;await assert.rejects(d.run(()=>{called=true;}),/exhausted/);assert.equal(called,false);
 });
+
+test("clock rollback never restores elapsed budget",()=>{
+ let now=0;const d=makeProbeDeadline(()=>now);now=8000;
+ assert.equal(d.remaining(),5000);now=4000;assert.equal(d.remaining(),5000);
+});
+test("late resolved promise fails even before timer callback executes",async()=>{
+ for(const cap of [1,5,100,3500,13000]){
+  let now=0,signal;const d=makeProbeDeadline(()=>now);
+  await assert.rejects(d.run(s=>{signal=s;now=cap;return "late";},cap),/deadline exceeded/);
+  assert.equal(signal.aborted,true);
+ }
+});
+test("timely results remain accepted",async()=>{
+ let now=0;const d=makeProbeDeadline(()=>now);
+ assert.equal(await d.run(()=>{now=99;return 42;},100),42);
+});
+test("invalid timing configuration fails closed",()=>{
+ for(const budget of [{deadline_ms:0,response_reserve_ms:0},{deadline_ms:10,response_reserve_ms:10},{deadline_ms:10,response_reserve_ms:-1},{deadline_ms:Infinity,response_reserve_ms:0}])
+  assert.throws(()=>makeProbeDeadline(()=>0,budget),/Invalid probe budget/);
+});
