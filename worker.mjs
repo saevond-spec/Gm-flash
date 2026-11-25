@@ -325,6 +325,21 @@ export async function solveReasoningPortfolio(ai,seed){
  return {schema:"sprite.reasoning.v1",seed,generated_fictional_tasks:true,tasks,verified_answers:answers,independent_reference_agreement:verified,models:results,verified_solution:answers,official_benchmark:false,customer_data:false,marketplace_submission:false};
 }
 
+// Stream untrusted probe data with an enforced byte ceiling before allocation.
+export async function readBoundedProbeBody(body,limit){
+ if(!body||!Number.isSafeInteger(limit)||limit<1)throw Error("Invalid probe body");
+ const reader=body.getReader(),chunks=[];let size=0;
+ try{
+  for(;;){const {done,value}=await reader.read();if(done)break;
+   if(!(value instanceof Uint8Array)||value.byteLength>limit-size)throw Error("Probe body exceeds size limit");
+   size+=value.byteLength;chunks.push(value);
+  }
+ }finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
+ const bytes=new Uint8Array(size);let offset=0;
+ for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
+ return bytes;
+}
+
 export default {
  async scheduled(event,env,ctx){ctx.waitUntil(runScheduledAutonomy(env));},
  async fetch(req,env) {
@@ -348,8 +363,7 @@ export default {
   if(req.method==="GET" && path==="/")return new Response(PAGE,{headers:{"content-type":"text/html; charset=utf-8","cache-control":"no-store","content-security-policy":"default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'","x-content-type-options":"nosniff"}});
   if(req.method==="GET" && path==="/health")return json({service:"ClawScout Independent",deployed:true,webhook:"/cph-webhook",webhook_signature_enforced:true,secret_stored_in_worker:!!env.CPH_WEBHOOK_SECRET,ai_bound:!!env.AI,operator_configured:!!env.CONTROL_TOKEN,auto_bidding:AUTONOMOUS_BID_POLICY.automatic_submission_enabled,clawhunt_api_key_configured:!!env.CPH_API_KEY,manual_bidding_enabled:true,bid_solve_enabled:true,automatic_bid_solve:AUTONOMOUS_BID_POLICY.automatic_submission_enabled,autonomous_bid_policy:AUTONOMOUS_BID_POLICY,manual_bid_limit_cents:100000,bid_reservation_guard:true,bid_ledger_bound:!!env.BID_LEDGER});
   if(req.method==="POST" && path==="/cph-webhook"){
-    const raw=await req.arrayBuffer();
-    if(raw.byteLength>32768)return json({received:false,error:"event too large"},413);
+    let raw;try{raw=(await readBoundedProbeBody(req.body,32768)).buffer;}catch{return json({received:false,error:"Invalid or oversized event"},413);}
     let hookSecret;
     try {hookSecret=await signingSecret(env)}
     catch {return json({error:"Webhook authentication unavailable; event not processed"},503)}
@@ -366,10 +380,7 @@ export default {
         try{
           const response=await fetch(url,{method:"GET",redirect:"manual",signal:ac.signal,headers:{"Accept":"image/png"}});
           if(response.status!==200 || Number(response.headers.get("content-length")||0)>262144)throw Error("Image download rejected");
-          if(!response.body)throw Error("Image body missing");
-          const reader=response.body.getReader(), chunks=[];let size=0;
-          try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>262144)throw Error("Image exceeds size limit");chunks.push(value);}}finally{await reader.cancel().catch(()=>{});}
-          const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
+          const bytes=await readBoundedProbeBody(response.body,262144);
           if(bytes.length<24||![137,80,78,71,13,10,26,10].every((x,i)=>bytes[i]===x)||String.fromCharCode(...bytes.subarray(12,16))!=="IHDR")throw Error("Invalid PNG");
           const header=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);const width=header.getUint32(16),height=header.getUint32(20);if(!width||!height||width*height>16777216)throw Error("Invalid image dimensions");
           let binary="";for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
@@ -397,9 +408,7 @@ export default {
           headers:{"Accept":"text/plain","User-Agent":"gm-flash-sprite-probe/1.0"}});
         if(result.status!==200)return json({probe_id,status:"error",error:"Probe download failed: HTTP "+result.status});
         if(Number(result.headers.get("content-length")||0)>65536)return json({probe_id,status:"error",error:"Probe file too large"});
-        const rawFile=await result.arrayBuffer();
-        if(rawFile.byteLength>65536)return json({probe_id,status:"error",error:"Probe file too large"});
-        const bytes=new Uint8Array(rawFile);
+        const bytes=await readBoundedProbeBody(result.body,65536);
         const sha=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",bytes)),b=>b.toString(16).padStart(2,"0")).join("");
         return json({probe_id,status:"success",result:{
           file_hash:"sha256:"+sha,file_size:bytes.byteLength,
