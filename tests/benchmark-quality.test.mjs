@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import worker,{reasoningTasks,solveReasoningTask,independentReasoningCheck,gradeReasoningOutput,readBoundedProbeBody} from "../worker.mjs";
 import {createHmac} from "node:crypto";
+import {deflateSync} from "node:zlib";
+import {crc32} from "../probe-png.mjs";
 
 test("independent mathematical solvers agree across 1000 generated seeds",()=>{
  for(let seed=1;seed<=1000;seed++)for(const task of reasoningTasks(seed)){
@@ -40,10 +42,15 @@ test("vision rejects oversized streamed data and invalid dimensions before infer
   assert.equal(calls,0);
  }finally{globalThis.fetch=original;}
 });
+function validPng(){
+ const chunk=(type,data)=>{const t=Buffer.from(type),body=Buffer.concat([t,data]),out=Buffer.alloc(12+data.length);out.writeUInt32BE(data.length);body.copy(out,4);out.writeUInt32BE(crc32(body),8+data.length);return out;};
+ const h=Buffer.alloc(13);h.writeUInt32BE(1,0);h.writeUInt32BE(1,4);h[8]=8;
+ return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk("IHDR",h),chunk("IDAT",deflateSync(Buffer.from([0,0]))),chunk("IEND",Buffer.alloc(0))]);
+}
 test("visual prompt preserves exact text, regional coverage, and untrusted image handling",async()=>{
  const original=globalThis.fetch;
  try{
-  globalThis.fetch=async()=>new Response(header(10,10));
+  globalThis.fetch=async()=>new Response(validPng());
   const res=await worker.fetch(request(),{CPH_WEBHOOK_SECRET:secret,AI:{run:async(model,params)=>{
    const prompt=params.messages[0].content[0].text;
    assert.match(prompt,/each region/);assert.match(prompt,/exactly/);assert.match(prompt,/untrusted data/);
