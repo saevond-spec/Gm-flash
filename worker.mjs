@@ -330,18 +330,32 @@ export async function solveReasoningPortfolio(ai,seed){
 }
 
 // Stream untrusted probe data with an enforced byte ceiling before allocation.
-export async function readBoundedProbeBody(body,limit){
- if(!body||!Number.isSafeInteger(limit)||limit<1)throw Error("Invalid probe body");
- const reader=body.getReader(),chunks=[];let size=0;
+export async function readBoundedProbeBody(body,limit,signal){
+ if(!body||!Number.isSafeInteger(limit)||limit<1||limit>1048576)throw Error("Invalid probe body");
+ if(signal?.aborted)throw Error("Probe body aborted");
+ const reader=body.getReader(),bytes=new Uint8Array(limit);let size=0,emptyChunks=0,abort;
+ const aborted=signal?new Promise((_,reject)=>{
+  abort=()=>reject(Error("Probe body aborted"));
+  signal.addEventListener("abort",abort,{once:true});
+ }):null;
  try{
-  for(;;){const {done,value}=await reader.read();if(done)break;
+  if(signal?.aborted)throw Error("Probe body aborted");
+  for(;;){
+   const pending=reader.read();
+   const {done,value}=await (aborted?Promise.race([pending,aborted]):pending);
+   if(done)break;
    if(!(value instanceof Uint8Array)||value.byteLength>limit-size)throw Error("Probe body exceeds size limit");
-   size+=value.byteLength;chunks.push(value);
+   if(!value.byteLength){if(++emptyChunks>1024)throw Error("Empty probe stream");continue;}
+   emptyChunks=0;bytes.set(value,size);size+=value.byteLength;
   }
- }finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
- const bytes=new Uint8Array(size);let offset=0;
- for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
- return bytes;
+  if(signal?.aborted)throw Error("Probe body aborted");
+  return bytes.slice(0,size);
+ }finally{
+  if(abort)signal.removeEventListener("abort",abort);
+  // A malicious or stalled underlying stream must not hold up cleanup.
+  try{Promise.resolve(reader.cancel()).catch(()=>{});}catch{}
+  try{reader.releaseLock();}catch{}
+ }
 }
 
 export default {
@@ -368,12 +382,13 @@ export default {
   if(req.method==="GET" && path==="/health")return json({service:"ClawScout Independent",deployed:true,webhook:"/cph-webhook",webhook_signature_enforced:true,secret_stored_in_worker:!!env.CPH_WEBHOOK_SECRET,ai_bound:!!env.AI,operator_configured:!!env.CONTROL_TOKEN,auto_bidding:AUTONOMOUS_BID_POLICY.automatic_submission_enabled,clawhunt_api_key_configured:!!env.CPH_API_KEY,manual_bidding_enabled:true,bid_solve_enabled:true,automatic_bid_solve:AUTONOMOUS_BID_POLICY.automatic_submission_enabled,autonomous_bid_policy:AUTONOMOUS_BID_POLICY,manual_bid_limit_cents:100000,bid_reservation_guard:true,bid_ledger_bound:!!env.BID_LEDGER});
   if(req.method==="POST" && path==="/cph-webhook"){
     const deadline=makeProbeDeadline();
-    let raw;try{raw=(await deadline.run(()=>readBoundedProbeBody(req.body,32768),1000)).buffer;}catch{return json({received:false,error:"Invalid or oversized event"},413);}
+    let raw;try{raw=(await deadline.run(signal=>readBoundedProbeBody(req.body,32768,signal),1000)).buffer;}catch{return json({received:false,error:"Invalid or oversized event"},413);}
     if(!plausibleProbeHeaders(req.headers))return json({error:"Invalid webhook signature or stale timestamp"},401);
     let hookSecret;
     try {hookSecret=await deadline.run(()=>signingSecret(env,deadline.allowance(PROBE_BUDGET.identity_cap_ms)),PROBE_BUDGET.identity_cap_ms)}
     catch {return json({error:"Webhook authentication unavailable; event not processed"},503)}
-    if(!(await signed(req,hookSecret,raw)))return json({error:"Invalid webhook signature or stale timestamp"},401);
+    let signatureValid;try{signatureValid=await deadline.run(()=>signed(req,hookSecret,raw));}catch{return json({error:"Webhook verification timed out"},503);}
+    if(!signatureValid)return json({error:"Invalid webhook signature or stale timestamp"},401);
     let event;try{event=JSON.parse(new TextDecoder().decode(raw))}catch{return json({error:"Invalid JSON"},400)}
     if(event?.event_type==="capability_probe"){
       const probe_id=typeof event.probe_id==="string"?event.probe_id.slice(0,100):null;
@@ -389,7 +404,7 @@ export default {
             httpStatus=response.status;
             if(response.status!==200 || Number(response.headers.get("content-length")||0)>262144)throw Error("Image download rejected");
             stage="image_validation";
-            return readBoundedProbeBody(response.body,262144);
+            return readBoundedProbeBody(response.body,262144,signal);
           },PROBE_BUDGET.visual_download_cap_ms);
           if(bytes.length<24||![137,80,78,71,13,10,26,10].every((x,i)=>bytes[i]===x)||String.fromCharCode(...bytes.subarray(12,16))!=="IHDR")throw Error("Invalid PNG");
           const header=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);const width=header.getUint32(16),height=header.getUint32(20);if(!width||!height||width*height>16777216)throw Error("Invalid image dimensions");
@@ -419,9 +434,10 @@ export default {
             headers:{"Accept":"text/plain","User-Agent":"gm-flash-sprite-probe/1.1"}});
           if(result.status!==200)throw Error("Probe download failed");
           if(Number(result.headers.get("content-length")||0)>65536)throw Error("Probe file too large");
-          return readBoundedProbeBody(result.body,65536);
+          return readBoundedProbeBody(result.body,65536,signal);
         },PROBE_BUDGET.file_download_cap_ms);
-        const sha=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",bytes)),b=>b.toString(16).padStart(2,"0")).join("");
+        const digest=await deadline.run(()=>crypto.subtle.digest("SHA-256",bytes));
+        const sha=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,"0")).join("");
         return json({probe_id,status:"success",result:{
           file_hash:"sha256:"+sha,file_size:bytes.byteLength,
           content_preview:new TextDecoder().decode(bytes).slice(0,100)
