@@ -1,6 +1,7 @@
 import { submitWithReservation } from "./bid-reservation.mjs";
 import { makeProbeDeadline, PROBE_BUDGET } from "./probe-deadline.mjs";
 import { validateProbePng } from "./probe-png.mjs";
+import { benchmarkAuthShape } from "./acceptance-auth-shape.mjs";
 import { solveWorkflow } from "./solve-workflow.mjs";
 import { prepareBidPlan } from "./bid-solve.mjs";
 import { analyzePublicPhoto } from "./photo-vision.mjs";
@@ -384,7 +385,14 @@ export default {
   if(req.method==="POST" && path==="/cph-webhook"){
     const deadline=makeProbeDeadline();
     let raw;try{raw=(await deadline.run(signal=>readBoundedProbeBody(req.body,32768,signal),1000)).buffer;}catch{return json({received:false,error:"Invalid or oversized event"},413);}
-    if(!plausibleProbeHeaders(req.headers))return json({error:"Invalid webhook signature or stale timestamp"},401);
+    if(!plausibleProbeHeaders(req.headers)){
+      // Only record fixed shape flags; never record headers, question text or raw bodies.
+      try{const shape=benchmarkAuthShape(req.headers,JSON.parse(new TextDecoder().decode(raw)));
+        if(shape.has_question||["benchmark","benchmark_test","acceptance_benchmark","benchmark_request"].includes(shape.event_type))
+          console.info(JSON.stringify({event:"sprite_acceptance_auth_shape",...shape}));
+      }catch{}
+      return json({error:"Invalid webhook signature or stale timestamp"},401);
+    }
     let hookSecret;
     try {hookSecret=await deadline.run(()=>signingSecret(env,deadline.allowance(PROBE_BUDGET.identity_cap_ms)),PROBE_BUDGET.identity_cap_ms)}
     catch {return json({error:"Webhook authentication unavailable; event not processed"},503)}
