@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker,{reasoningTasks,solveReasoningTask,independentReasoningCheck,gradeReasoningOutput} from "../worker.mjs";
+import worker,{reasoningTasks,solveReasoningTask,independentReasoningCheck,gradeReasoningOutput,readBoundedProbeBody} from "../worker.mjs";
 import {createHmac} from "node:crypto";
 
 test("independent mathematical solvers agree across 1000 generated seeds",()=>{
@@ -52,4 +52,16 @@ test("visual prompt preserves exact text, regional coverage, and untrusted image
   }}});
   const body=await res.json();assert.equal(body.status,"success");assert.equal(body.result.description,"Synthetic visual response");
  }finally{globalThis.fetch=original;}
+});
+
+test("bounded stream preserves exact bytes and rejects oversized payloads",async()=>{
+ const bytes=await readBoundedProbeBody(new Response(new Uint8Array([0,10,255])).body,3);
+ assert.deepEqual([...bytes],[0,10,255]);
+ await assert.rejects(readBoundedProbeBody(new Response(new Uint8Array(32769)).body,32768),/exceeds size limit/);
+ await assert.rejects(readBoundedProbeBody(new Response(new Uint8Array(65537)).body,65536),/exceeds size limit/);
+});
+test("oversized unsigned webhook is rejected before verification",async()=>{
+ const req=new Request("https://example.invalid/cph-webhook",{method:"POST",body:new Uint8Array(32769)});
+ const res=await worker.fetch(req,{});
+ assert.equal(res.status,413);
 });
