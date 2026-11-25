@@ -65,3 +65,23 @@ test("oversized unsigned webhook is rejected before verification",async()=>{
  const res=await worker.fetch(req,{});
  assert.equal(res.status,413);
 });
+
+test("stalled stream cancellation releases the reader without waiting for cleanup",async()=>{
+ const controller=new AbortController();let cancelled=false,released=false;
+ const body={getReader(){return {read:()=>new Promise(()=>{}),cancel(){cancelled=true;return new Promise(()=>{});},releaseLock(){released=true;}};}};
+ const pending=readBoundedProbeBody(body,32,controller.signal);
+ controller.abort();
+ await assert.rejects(pending,/aborted/);
+ assert.equal(cancelled,true);assert.equal(released,true);
+});
+test("empty-chunk flood fails closed",async()=>{
+ let cancelled=false,released=false;
+ const body={getReader(){return {read:async()=>({done:false,value:new Uint8Array(0)}),cancel:async()=>{cancelled=true;},releaseLock(){released=true;}};}};
+ await assert.rejects(readBoundedProbeBody(body,32),/Empty probe stream/);
+ assert.equal(cancelled,true);assert.equal(released,true);
+});
+test("all byte values survive segmented streaming",async()=>{
+ const values=Uint8Array.from({length:256},(_,i)=>i);
+ const stream=new ReadableStream({start(c){for(const n of values)c.enqueue(Uint8Array.of(n));c.close();}});
+ assert.deepEqual(await readBoundedProbeBody(stream,256),values);
+});
