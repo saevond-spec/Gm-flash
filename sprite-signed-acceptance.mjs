@@ -1,3 +1,5 @@
+import {verifyCompoundMath} from "./sprite-rational-verifier.mjs";
+import {solveExactQuestion} from "./acceptance-reasoning.mjs";
 import {verifyStandaloneMath} from "./sprite-verified-math.mjs";
 // Internal, provisional acceptance adapter. The caller must verify HMAC before
 // calling this function. The upstream acceptance event contract is unconfirmed.
@@ -9,7 +11,7 @@ export function answerSignedAcceptanceEvent(event){
  if(top&&nested)return {status:400,body:{error:"Ambiguous question location"}};
  const q=top?event.question:nested?event.payload.question:null;
  if(typeof q!=="string"||!q.trim()||q.length>1200)return {status:400,body:{error:"Invalid question"}};
- const checked=verifyStandaloneMath(q);
+ const checked=verifyStandaloneMath(q)??verifyCompoundMath(q,solveExactQuestion);
  if(!checked)return {status:503,body:{error:"No independently verified exact answer available"}};
  const reasoning={arithmetic:"Computed the exact arithmetic result and checked it independently.",list:"Computed the requested list statistic and checked it by independent sorting or summation.",prime:"Checked the number against possible divisors."}[checked.kind];
  if(!reasoning)return {status:503,body:{error:"Verification unavailable"}};
