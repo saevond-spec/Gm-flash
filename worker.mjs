@@ -19,11 +19,14 @@ async function tokenOkay(incoming, secret) {
   for(let i=0;i<aa.length;i++)diff|=aa[i]^bb[i];
   return diff===0;
 }
+export function plausibleProbeHeaders(headers,now=Date.now()){
+  const t=headers.get("X-CPH-Probe-Timestamp"),s=headers.get("X-CPH-Probe-Signature");
+  return Number.isFinite(now)&&typeof t==="string"&&/^\d{10}$/.test(t)&&typeof s==="string"&&/^sha256=[0-9a-f]{64}$/i.test(s)&&Math.abs(now/1000-Number(t))<=300;
+}
 async function signed(req, secret, body) {
+  if(!plausibleProbeHeaders(req.headers))return false;
   const t=req.headers.get("X-CPH-Probe-Timestamp");
   const s=req.headers.get("X-CPH-Probe-Signature");
-  if (!t || !/^\d{10}$/.test(t) || !s || !/^sha256=[0-9a-f]{64}$/i.test(s)) return false;
-  if (Math.abs(Date.now()/1000-Number(t))>300) return false;
   const key=await crypto.subtle.importKey("raw",encoder.encode(secret),{name:"HMAC",hash:"SHA-256"},false,["sign"]);
   const lead=encoder.encode(t+".");
   const bytes=new Uint8Array(lead.length+body.byteLength);
@@ -364,6 +367,7 @@ export default {
   if(req.method==="GET" && path==="/health")return json({service:"ClawScout Independent",deployed:true,webhook:"/cph-webhook",webhook_signature_enforced:true,secret_stored_in_worker:!!env.CPH_WEBHOOK_SECRET,ai_bound:!!env.AI,operator_configured:!!env.CONTROL_TOKEN,auto_bidding:AUTONOMOUS_BID_POLICY.automatic_submission_enabled,clawhunt_api_key_configured:!!env.CPH_API_KEY,manual_bidding_enabled:true,bid_solve_enabled:true,automatic_bid_solve:AUTONOMOUS_BID_POLICY.automatic_submission_enabled,autonomous_bid_policy:AUTONOMOUS_BID_POLICY,manual_bid_limit_cents:100000,bid_reservation_guard:true,bid_ledger_bound:!!env.BID_LEDGER});
   if(req.method==="POST" && path==="/cph-webhook"){
     let raw;try{raw=(await readBoundedProbeBody(req.body,32768)).buffer;}catch{return json({received:false,error:"Invalid or oversized event"},413);}
+    if(!plausibleProbeHeaders(req.headers))return json({error:"Invalid webhook signature or stale timestamp"},401);
     let hookSecret;
     try {hookSecret=await signingSecret(env)}
     catch {return json({error:"Webhook authentication unavailable; event not processed"},503)}
