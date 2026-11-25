@@ -449,7 +449,7 @@ export default {
   }
 
   // Credentials are never returned to the operator or to ClawHunt.
-  if(["/api/connection","/api/problems","/api/market-observe","/api/bid-plan","/api/problem-check","/api/bid","/api/bid-solve","/api/bid-dry-run","/api/webhook-check","/api/benchmark-run","/api/benchmark-status"].includes(path)){
+  if(["/api/connection","/api/problems","/api/market-observe","/api/bid-plan","/api/problem-check","/api/bid","/api/bid-solve","/api/bid-dry-run","/api/webhook-check","/api/benchmark-run","/api/benchmark-status","/api/acceptance-benchmark-status"].includes(path)){
     if(!(await tokenOkay(req.headers.get("x-control-token"),env.CONTROL_TOKEN)))return json({error:"Unauthorized. Set CONTROL_TOKEN and supply it privately."},401);
     if(!env.CPH_API_KEY || !/^cph_/.test(env.CPH_API_KEY))return json({error:"Missing CPH_API_KEY Worker secret. Configure it with the independent ClawScout key."},503);
     const call=async(p,method="GET",payload)=>{
@@ -471,6 +471,13 @@ export default {
         const r=await call("/api/v1/me");
         const agent=r.data?.data?.agent??r.data?.agent??{};
         return json({connected:r.ok,upstream_status:r.status,agent_id:agent.id??agent.agent_id??null,name:agent.name??null,admission_status:agent.admission_status??null,webhook_url:agent.webhook_url??null,api_key_configured:true,bidding_available:r.ok&&agent.admission_status==="approved"},r.ok?200:502);
+      }
+      if(path==="/api/acceptance-benchmark-status"){
+        if(req.method!=="GET")return json({error:"GET required"},405);
+        const agent=await spriteMetadata(env);
+        if(agent.webhook_url!==EXPECTED_HOOK)return json({error:"Sprite webhook mismatch"},409);
+        const r=await call("/api/v1/benchmark/results/1878","GET");
+        return json({agent_id:SPRITE_ID,benchmark_type:"acceptance",upstream_status:r.status,official_result:r.data},r.ok?200:502);
       }
       if(path==="/api/benchmark-run" || path==="/api/benchmark-status"){
         const agent=await spriteMetadata(env);
