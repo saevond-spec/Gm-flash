@@ -378,7 +378,7 @@ export default {
         if(!env.AI || typeof env.AI.run!=="function")return json({probe_id,status:"error",error:"Vision model unavailable"});
         const ac=new AbortController(), timer=setTimeout(()=>ac.abort(),4500);
         try{
-          const response=await fetch(url,{method:"GET",redirect:"manual",signal:ac.signal,headers:{"Accept":"image/png"}});
+          const response=await fetch(url,{method:"GET",redirect:"manual",signal:ac.signal,headers:{"Accept":"image/png","User-Agent":"gm-flash-sprite-probe/1.1 (+https://gm-flash.saevond.workers.dev)"}});
           if(response.status!==200 || Number(response.headers.get("content-length")||0)>262144)throw Error("Image download rejected");
           const bytes=await readBoundedProbeBody(response.body,262144);
           if(bytes.length<24||![137,80,78,71,13,10,26,10].every((x,i)=>bytes[i]===x)||String.fromCharCode(...bytes.subarray(12,16))!=="IHDR")throw Error("Invalid PNG");
@@ -392,7 +392,7 @@ export default {
             max_tokens:640,temperature:0,chat_template_kwargs:{enable_thinking:false}
           });
           const answer=out?.choices?.[0]?.message?.content??out?.response;
-          if(typeof answer!=="string"||!answer.trim())throw Error("No vision answer");
+          if(typeof answer!=="string"||!answer.trim()||answer.length>12000)throw Error("Invalid vision answer");
           return json({probe_id,status:"success",result:{description:answer.trim().slice(0,2000)}});
         }catch{return json({probe_id,status:"error",error:"Image retrieval or real vision inference failed"})}
         finally{clearTimeout(timer)}
