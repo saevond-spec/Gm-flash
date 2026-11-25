@@ -1,5 +1,6 @@
 import { submitWithReservation } from "./bid-reservation.mjs";
 import { makeProbeDeadline, PROBE_BUDGET } from "./probe-deadline.mjs";
+import { validateProbePng } from "./probe-png.mjs";
 import { solveWorkflow } from "./solve-workflow.mjs";
 import { prepareBidPlan } from "./bid-solve.mjs";
 import { analyzePublicPhoto } from "./photo-vision.mjs";
@@ -406,8 +407,8 @@ export default {
             stage="image_validation";
             return readBoundedProbeBody(response.body,262144,signal);
           },PROBE_BUDGET.visual_download_cap_ms);
-          if(bytes.length<24||![137,80,78,71,13,10,26,10].every((x,i)=>bytes[i]===x)||String.fromCharCode(...bytes.subarray(12,16))!=="IHDR")throw Error("Invalid PNG");
-          const header=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);const width=header.getUint32(16),height=header.getUint32(20);if(!width||!height||width*height>16777216)throw Error("Invalid image dimensions");
+          stage="image_validation";
+          await deadline.run(()=>validateProbePng(bytes));
           let binary="";for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
           stage="inference";
           const out=await deadline.run(()=>env.AI.run("@cf/google/gemma-4-26b-a4b-it",{
