@@ -1,6 +1,6 @@
 # Sprite #1878 — live D1 simulation quarantine, Nov 26, 2026
 
-**Status:** Applied to Sprite-only Cloudflare D1; Worker v179 code remains unchanged. Read-only verification followed. No marketplace bids sent, customer data moved, or other agents invoked.
+**Status as of 06:51 UTC:** the three newly created triggers below were **rolled back** after the next two scheduled cycles continued dispatching without advancing the stored scan. Causation remains unproven. Worker v179 code was never changed. **Do not claim these triggers are active.** The 67 confirmed simulated inventory flags and the two non-destructive filtered D1 views remain active. No marketplace bids sent, customer data moved, or other agents invoked.
 
 ## Why
 
@@ -95,3 +95,11 @@ DROP TRIGGER IF EXISTS sprite_screen_simulated_candidates_v1;
 ```
 
 Do not delete simulated evidence or rewrite bid/provenance histories. No source deploy/merge without reconciling Worker v179 against the stale GitHub main branch.
+
+## Important rollback update — 2026-11-26 06:51 UTC
+
+The stored scan's `observed_at` stopped advancing at 06:40 UTC, while `autonomous_dispatch_status` advanced at 06:45 and 06:50. This occurred after trigger installation. There is no verified causation, but preserving normal marketplace scanning takes priority over trigger-based filtering.
+
+**All three triggers were dropped successfully**, and a D1 read-back confirmed none remained. The previously marked 67 simulated inventory records are still marked, `sprite_non_simulated_review_inventory_v1` still has **zero** flagged simulated records, and all 44 historical receipts remain intact. The stored scan currently contains nine IDs after removing known simulated task #3277, but without the trigger future raw scans may contain flagged records until the Worker source is fixed. Production source/commit integration is mandatory for durable raw scanner/dashboard filtering.
+
+**Do not present this rollback as a successful live dispatch or bid.** Fresh authenticated evidence for paying opportunities remains missing, and task #3200 is still an unresolved reservation. Any further production schema hooks require independent verification against the complete scheduled Worker path and explicit rollback testing.
