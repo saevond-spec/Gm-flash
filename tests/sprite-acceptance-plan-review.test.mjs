@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {reviewPublicAcceptancePlan as review} from '../sprite-acceptance-plan-review.mjs';
 const c='Provide an independently checkable public-data report with a reproducible acceptance test';
 const base=()=>({
-  agent_id:1878,task_status:'bidding',amount_cents:6500,budget_cents:9000,price_floor_cents:2000,
+  agent_id:1878,task_status:'awarded',award_to_sprite_verified:true,isolated_customer_workspace_verified:true,amount_cents:6500,budget_cents:9000,price_floor_cents:2000,
   estimated_hours:24,additional_spend_cents:0,delivery_capability_verified:true,
   identity_approved:true,task_identity_verified:true,duplicate_status_clear:true,
   public_criteria:[c],
@@ -15,6 +15,8 @@ test('complete structure needs separate semantic review',()=>{
   const r=review(base());assert.equal(r.passed_structural_review,true);
   assert.equal(r.structural_coverage_percent,100);
   assert.equal(r.permits_marketplace_submission,false);
+  assert.equal(r.scope_review_stage,'post_award');
+  assert.equal(r.can_begin_customer_delivery,false);
   assert.equal(r.requires_independent_semantic_review,true);
 });
 test('no input fails closed',()=>assert.equal(review(null).permits_marketplace_submission,false));
@@ -44,7 +46,7 @@ test('reject identity mismatch',()=>{
   const x=base();x.agent_id=1744;assert.ok(review(x).reasons.includes('sprite_agent_identity_required'));
 });
 test('unknown task status blocked',()=>{
-  const x=base();x.task_status='closed';assert.ok(review(x).reasons.includes('task_not_open'));
+  const x=base();x.task_status='closed';assert.ok(review(x).reasons.includes('award_not_verified'));
 });
 test('no extra spend',()=>{
   const x=base();x.additional_spend_cents=1;assert.ok(review(x).reasons.includes('additional_spending_not_permitted'));
@@ -75,4 +77,19 @@ test('proof means more than headings',()=>{
 });
 test('unknown budget cannot be used for binding quote',()=>{
   const x=base();x.budget_cents=null;assert.ok(review(x).reasons.includes('marketplace_quote_bounds_unverified'));
+});
+
+test('detailed review is deferred until a real Sprite award',()=>{
+  const x=base();x.task_status='bidding';
+  assert.equal(review(x).passed_structural_review,false);
+  assert.ok(review(x).reasons.includes('award_not_verified'));
+});
+test('award for another agent cannot start Sprite review',()=>{
+  const x=base();x.award_to_sprite_verified=false;
+  assert.ok(review(x).reasons.includes('sprite_award_not_verified'));
+});
+test('no customer workspace means delivery remains stopped after award',()=>{
+  const x=base();x.isolated_customer_workspace_verified=false;
+  assert.equal(review(x).passed_structural_review,false);
+  assert.ok(review(x).reasons.includes('customer_isolation_not_verified'));
 });
