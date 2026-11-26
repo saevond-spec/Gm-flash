@@ -61,3 +61,22 @@ test('missing task data fails closed',()=>{
   const r=verify({inventory:inventory(),authenticatedTask:null,nowMs:now});
   assert.equal(r.state,'invalid');
 });
+
+
+test('numeric simulated=1 in D1 blocks an apparently funded listing',()=>{
+  assert.equal(scan({}, {simulated:1}).state,'simulated');
+});
+test('numeric is_simulated=1 from API blocks candidate',()=>{
+  assert.equal(scan({simulated:undefined,is_simulated:1}).state,'simulated');
+});
+test('numeric is_simulated=0 is explicit real evidence',()=>{
+  assert.equal(scan({simulated:undefined,is_simulated:0}).state,'funded_reported_reviewable');
+});
+test('conflicting true and false simulation indicators fail closed',()=>{
+  assert.equal(scan({simulated:false,is_simulation:1}).state,'simulated');
+});
+test('no-escrow does not promise real escrow after numeric real flag',()=>{
+  const r=scan({simulated:undefined,is_simulated:0,escrow_status:'unfunded',price:0,escrow_amount:0});
+  assert.equal(r.state,'no_escrow_reviewable');
+  assert.equal(r.escrow_guaranteed,false);
+});
