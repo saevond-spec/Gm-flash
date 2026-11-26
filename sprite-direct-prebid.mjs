@@ -54,7 +54,16 @@ export function evaluateSpriteDirectPrebid({
     reject("currency_not_usd");
   const conflicting = isSimulated(task)||isSimulated(publicEvidence)||publicEvidence?.simulated_bounty_banner===true;
   if(conflicting)reject("simulated_or_nonpaying_bounty");
-  const explicitReal=explicitlyReal(task)||(
+  // ClawHunt's authenticated escrowed-order contract can provide direct
+  // positive market authenticity, even when 'simulated:false' is omitted.
+  // Never infer this from a cached 'funded' label or a public page alone.
+  const authenticatedHeldOrder=task?.authenticated===true&&
+    task?.identity_verified===true&&task?.bounty_type==='escrowed'&&
+    ['funded','held'].includes(String(task?.escrow_status??'').toLowerCase())&&
+    task?.escrow_funded===true&&task?.payment_evidence==='funded_escrow'&&
+    Number.isSafeInteger(task?.escrow_amount)&&task.escrow_amount>0&&
+    task?.price===task.escrow_amount;
+  const explicitReal=explicitlyReal(task)||authenticatedHeldOrder||(
     publicEvidence?.authenticated===true&&publicEvidence?.task_id===id&&
     publicEvidence?.explicit_non_simulated_verified===true&&
     Number.isFinite(Date.parse(publicEvidence?.verified_at??""))&&
