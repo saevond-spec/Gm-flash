@@ -20,18 +20,18 @@ for(const [id,[code,kind]] of Object.entries(BATCH_TASKS)){
 }
 test("only exactly twenty explicit task ids are authorized",()=>assert.equal(Object.keys(BATCH_TASKS).length,20));
 test("reject unlisted task",()=>assert.throws(()=>build({id:"123",title:"Other",status:"bidding"},9000)));
-test("reject wrong title code",()=>assert.throws(()=>build(task("2573",{title:"Fictional different project"}),9000)));
-test("reject unknown simulation",()=>assert.throws(()=>build(task("2573",{simulated:true}),9000)));
-test("reject closed job",()=>assert.throws(()=>build(task("2573",{status:"closed"}),9000)));
-test("reject missing buyer acceptance",()=>assert.throws(()=>build(task("2573",{acceptance_criteria:"N/A"}),9000)));
-test("reject quote over connector maximum",()=>assert.throws(()=>build(task("2573"),100001)));
-test("public past deadline must be disclosed to buyer",()=>{const r=build(task("2573",{deadline:"2026-11-23T15:59:59"}),12500,{nowMs:Date.parse("2026-11-26T08:50:00Z")});assert.ok(r.message.includes("past bidding deadline"));assert.ok(r.proposal_text.includes("past bidding deadline"));});
+test("reject wrong title code",()=>assert.throws(()=>build(task("3287",{title:"Fictional different project"}),9000)));
+test("reject unknown simulation",()=>assert.throws(()=>build(task("3287",{simulated:true}),9000)));
+test("reject closed job",()=>assert.throws(()=>build(task("3287",{status:"closed"}),9000)));
+test("reject missing buyer acceptance",()=>assert.throws(()=>build(task("3287",{acceptance_criteria:"N/A"}),9000)));
+test("reject quote over connector maximum",()=>assert.throws(()=>build(task("3287"),100001)));
+test("public past deadline must be disclosed to buyer",()=>{const r=build(task("3287",{deadline:"2026-11-23T15:59:59"}),12500,{nowMs:Date.parse("2026-11-26T08:50:00Z")});assert.ok(r.message.includes("past bidding deadline"));assert.ok(r.proposal_text.includes("past bidding deadline"));});
 test("no customer secrets or buyer file content included in result",()=>{
- const r=build(task("2573",{secret_token:"CUSTOMER_SECRET_DONT_SHARE",buyer_attachment:"PRIVATE-CUSTOMER-PDF"}),9000);
+ const r=build(task("3287",{secret_token:"CUSTOMER_SECRET_DONT_SHARE",buyer_attachment:"PRIVATE-CUSTOMER-PDF"}),9000);
  assert.ok(!JSON.stringify(r).includes("CUSTOMER_SECRET_DONT_SHARE"));
  assert.ok(!JSON.stringify(r).includes("PRIVATE-CUSTOMER-PDF"));
 });
 test("sanitizes disallowed placeholder text before marketplace contract",()=>{
- const r=build(task("2573",{acceptance_criteria:"1. Placeholder rows with example-only identifiers.\n2. Provide screenshots and labels.\n3. Check all fictional errors."}),9000);
+ const r=build(task("3287",{acceptance_criteria:"1. Placeholder rows with example-only identifiers.\n2. Provide screenshots and labels.\n3. Check all fictional errors."}),9000);
  assert.ok(!/placeholder|lorem ipsum/i.test(r.proposal_text));
 });
