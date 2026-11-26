@@ -1,5 +1,5 @@
 /**
- * Sprite #1878 bid acceptance preflight. PUBLIC brief only.
+ * Sprite #1878 POST-AWARD detailed scope and acceptance review. Awarded task only.
  * Pure / no I/O, persistence, credentials, customer data, bid writes or model calls.
  * Validates structural *traceability*, NOT meaning, accuracy, or official ClawHunt scores.
  */
@@ -10,13 +10,16 @@ export function reviewPublicAcceptancePlan(input){
   if(!input||typeof input!=='object'||Array.isArray(input))return {
     structural_coverage_percent:0,criteria_count:0,structured_criteria_covered:0,
     passed_structural_review:false,requires_independent_semantic_review:true,
-    permits_marketplace_submission:false,reasons:['missing_public_brief']};
+    permits_marketplace_submission:false,scope_review_stage:'post_award',
+    can_begin_customer_delivery:false,reasons:['missing_awarded_task_scope']};
   const criteria=input.public_criteria,checks=input.acceptance_checks;
   if(!Array.isArray(criteria)||!criteria.length||criteria.length>40||
      criteria.some(x=>!plain(x)||x.length>2000))reasons.push('invalid_public_acceptance_criteria');
   if(!Array.isArray(checks)||checks.length>40)reasons.push('invalid_acceptance_check_items');
   if(input.agent_id!==1878)reasons.push('sprite_agent_identity_required');
-  if(!['open','bidding'].includes(input.task_status))reasons.push('task_not_open');
+  if(!['awarded','assigned','in_progress'].includes(input.task_status))reasons.push('award_not_verified');
+  if(input.award_to_sprite_verified!==true)reasons.push('sprite_award_not_verified');
+  if(input.isolated_customer_workspace_verified!==true)reasons.push('customer_isolation_not_verified');
   if(!integer(input.amount_cents,2000,100000))reasons.push('quote_outside_executable_range');
   if(!integer(input.budget_cents,2000,10000000)||!integer(input.price_floor_cents,0,10000000)||
      !integer(input.amount_cents,input.price_floor_cents??0,input.budget_cents??0))
@@ -57,6 +60,8 @@ export function reviewPublicAcceptancePlan(input){
     passed_structural_review:reasons.length===0,
     requires_independent_semantic_review:true,
     permits_marketplace_submission:false,
+    scope_review_stage:'post_award',
+    can_begin_customer_delivery:false,
     reasons:[...new Set(reasons)],
     score_kind:'internal_structural_coverage_not_official'
   };
