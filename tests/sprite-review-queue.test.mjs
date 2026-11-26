@@ -95,3 +95,21 @@ test('invalid scheduler configuration fails closed',()=>{
   assert.throws(()=>run([listing(1)],{limit:0}),RangeError);
   assert.throws(()=>run([listing(1)],{maxAgeMs:Infinity}),RangeError);
 });
+
+
+test('fresh duplicate survives an earlier stale record',()=>{
+  const r=run([
+    listing(808,{last_seen_at:'2026-11-26T02:00:00Z'}),
+    listing(808,{last_seen_at:'2026-11-26T05:59:00Z'})
+  ]);
+  assert.deepEqual(r.candidates.map(x=>x.problem_id),['808']);
+  assert.equal(r.candidates[0].last_seen_at,'2026-11-26T05:59:00.000Z');
+});
+test('latest duplicate simulated evidence overrides an older live listing',()=>{
+  const r=run([
+    listing(809,{simulated:null,last_seen_at:'2026-11-26T05:50:00Z'}),
+    listing(809,{simulated:true,last_seen_at:'2026-11-26T05:59:00Z'})
+  ]);
+  assert.equal(r.candidates.length,0);
+  assert.equal(r.diagnostics.excluded.explicit_simulation,1);
+});
