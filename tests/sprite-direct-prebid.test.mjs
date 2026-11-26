@@ -148,3 +148,35 @@ test('an invalid clock prevents falsely approving future events',()=>{
 test('a forged funded-escrow state does not pass contradictory fields',()=>{
   assert.ok(run({},{escrow_funded:false}).reasons.includes('funding_fields_conflict'));
 });
+
+
+test('live authenticated escrow order can prove authenticity without simulated=false',()=>{
+ const x=run({}, {
+   simulated:null,bounty_type:'escrowed',escrow_status:'funded',
+   escrow_funded:true,payment_evidence:'funded_escrow',
+   escrow_amount:12500,price:12500
+ });
+ assert.equal(x.prebid_feasible,true);
+});
+test('cached funded state is NOT sufficient',()=>{
+ const x=run({},{simulated:null,bounty_type:'escrowed',escrow_status:'funded'});
+ assert.ok(x.reasons.includes('simulation_authenticity_not_verified'));
+});
+test('escrow order requires positive escrow_funded proof',()=>{
+ const x=run({},{simulated:null,bounty_type:'escrowed',escrow_funded:false,
+  payment_evidence:'funded_escrow',escrow_amount:12500});
+ assert.ok(x.reasons.includes('simulation_authenticity_not_verified'));
+});
+test('escrow contract price must agree with funding amount',()=>{
+ const x=run({},{simulated:null,bounty_type:'escrowed',escrow_funded:true,
+  payment_evidence:'funded_escrow',escrow_amount:15000,price:12500});
+ assert.ok(x.reasons.includes('simulation_authenticity_not_verified'));
+});
+test('simulated public flag wins even over apparent genuine escrow',()=>{
+ const x=run({},{
+  simulated:null,bounty_type:'escrowed',escrow_funded:true,
+  payment_evidence:'funded_escrow',escrow_amount:12500
+ },{}, {publicEvidence:{simulated_bounty_banner:true}});
+ assert.ok(x.reasons.includes('simulated_or_nonpaying_bounty'));
+ assert.equal(x.prebid_feasible,false);
+});
