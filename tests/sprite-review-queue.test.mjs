@@ -70,13 +70,16 @@ test('duplicate ID is reviewed at most once',()=>{
 });
 test('prebid evidence does not require a delivery workspace',()=>{
   const pass={};for(const k of ['approved_sprite_identity','fresh_task_identity',
-    'open_non_simulated_task','independently_verified_public_scope','demonstrated_delivery_capability',
+    'open_non_simulated_task','public_scope_feasibility_screen','demonstrated_delivery_capability',
     'zero_additional_spend_plan','verified_price_and_deadline','accurate_complete_proposal',
     'clear_duplicate_and_uncertain_status','authorized_bid_submission'])pass[k]=true;
   const result=assessBidStageEvidence(pass);
   assert.equal(result.ready,true);
   assert.equal(result.workspace_attestation_is_prebid_requirement,false);
   assert.equal(result.delivery_workspace_required_after_award,true);
+  assert.equal(result.scope_review_stage,'post_award');
+  assert.equal(result.detailed_scope_review_required_before_delivery,true);
+  assert.equal(result.can_begin_customer_delivery,false);
 });
 test('missing evidence fails closed',()=>{
   const result=assessBidStageEvidence({approved_sprite_identity:true});
@@ -112,4 +115,21 @@ test('latest duplicate simulated evidence overrides an older live listing',()=>{
   ]);
   assert.equal(r.candidates.length,0);
   assert.equal(r.diagnostics.excluded.explicit_simulation,1);
+});
+
+test('prebid screen does not require full award-stage acceptance mapping',()=>{
+  const x={};for(const name of ['approved_sprite_identity','fresh_task_identity','open_non_simulated_task',
+    'public_scope_feasibility_screen','demonstrated_delivery_capability',
+    'zero_additional_spend_plan','verified_price_and_deadline','accurate_complete_proposal',
+    'clear_duplicate_and_uncertain_status','authorized_bid_submission'])x[name]=true;
+  assert.equal(assessBidStageEvidence(x).ready,true);
+  assert.equal(assessBidStageEvidence(x).scope_review_stage,'post_award');
+});
+test('prebid screen still rejects obvious scope or delivery mismatch',()=>{
+  const x={};for(const name of ['approved_sprite_identity','fresh_task_identity','open_non_simulated_task',
+    'public_scope_feasibility_screen','demonstrated_delivery_capability',
+    'zero_additional_spend_plan','verified_price_and_deadline','accurate_complete_proposal',
+    'clear_duplicate_and_uncertain_status','authorized_bid_submission'])x[name]=true;
+  x.public_scope_feasibility_screen=false;
+  assert.ok(assessBidStageEvidence(x).missing.includes('public_scope_feasibility_screen'));
 });
