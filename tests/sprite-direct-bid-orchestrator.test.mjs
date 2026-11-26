@@ -194,3 +194,12 @@ test('proposal helper never receives raw task details or customer attachments',a
   assert.ok(!payload.includes('CUSTOMER-ID-42'));
   assert.equal(helperInput.access,'isolated_public_brief_only');
 });
+
+
+test('numeric simulated public evidence prevents proposal work',async()=>{
+  const {ctx,result}=run({overrides:{
+    getPublicAuthenticityEvidence:async()=>({simulated:1})}});
+  assert.equal((await result).state,'simulated_bounty_excluded');
+  assert.equal(ctx.calls.proposals,0);
+  assert.equal(ctx.calls.sends,0);
+});
