@@ -48,11 +48,18 @@ function fixture({taskOverride={},proposalOverride={},proof=null}={}){
  };
  return {state,db,deps};
 }
-test('realistic Blender task with no equipment proof is held; zero POST',async()=>{
- const f=fixture({taskOverride:{title:'Blender bedroom scene',description:'Realistic Blender scene with human guidance'}});
+test('Blender task is held when truthful proposal admits delivery is not verified',async()=>{
+ const f=fixture({taskOverride:{title:'Blender bedroom scene',description:'Realistic Blender scene with human guidance'},
+   proposalOverride:{capability_verified:false,can_deliver_public_brief:false}});
  const result=await consume({db:f.db,nowSeconds:Math.floor(now/1000),submitSpriteDirectOnce:
   props=>submit({...props,deps:f.deps})});
  assert.equal(result.state,'held');assert.equal(f.state.sent,0);assert.equal(f.state.receipts,0);
+});
+test('Blender setup itself is not a prebid technical gate when delivery capability is verified',async()=>{
+ const f=fixture({taskOverride:{title:'Blender bedroom scene',description:'Realistic Blender scene with human guidance'}});
+ const result=await consume({db:f.db,nowSeconds:Math.floor(now/1000),submitSpriteDirectOnce:
+  props=>submit({...props,deps:f.deps})});
+ assert.equal(result.state,'confirmed');assert.equal(f.state.sent,1);assert.equal(f.state.receipts,1);
 });
 test('non-Blender, otherwise verified public task traverses one send and one receipt',async()=>{
  const f=fixture({taskOverride:{title:'Public reporting task',description:'Document public findings'}});
