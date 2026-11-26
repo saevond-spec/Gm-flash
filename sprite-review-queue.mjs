@@ -31,14 +31,27 @@ export function selectPublicReviewCandidates(records,options={}){
   const excludedIds=new Set([...idSet(options.reservationIds),...idSet(options.receiptIds),
     ...idSet(options.ownBidPresenceIds),...idSet(options.blockedIds)]);
   const cooldowns=options.cooldowns instanceof Map?options.cooldowns:new Map();
-  const exclusions=Object.create(null),seen=new Set();
+  const exclusions=Object.create(null),latestById=new Map();
   const exclude=why=>{exclusions[why]=(exclusions[why]??0)+1;};
   const buckets=new Map(ORDER.map(cat=>[cat,[]]));
+  // Reconcile duplicate observations before exclusion: an older or malformed
+  // snapshot must not starve a later fresh observation for the same task.
   for(const item of records){
     const id=safeId(item);
     if(!id){exclude('invalid_task_id');continue;}
-    if(seen.has(id)){exclude('duplicate_listing');continue;}
-    seen.add(id);
+    const prior=latestById.get(id);
+    if(prior){
+      exclude('duplicate_listing');
+      const currentAt=Date.parse(item?.last_seen_at??'');
+      const priorAt=Date.parse(prior?.last_seen_at??'');
+      if(Number.isFinite(currentAt)&&(!Number.isFinite(priorAt)||currentAt>priorAt))
+        latestById.set(id,item);
+      continue;
+    }
+    latestById.set(id,item);
+  }
+  for(const item of latestById.values()){
+    const id=safeId(item);
     if(excludedIds.has(id)){exclude('already_bid_reserved_or_blocked');continue;}
     const cooldownUntil=Number(cooldowns.get(id));
     if(Number.isFinite(cooldownUntil)&&cooldownUntil>nowMs){exclude('cooldown');continue;}
@@ -86,7 +99,7 @@ export function selectPublicReviewCandidates(records,options={}){
     }
     if(!progressed)break;
   }
-  return {candidates:chosen,diagnostics:{examined:records.length,unique_listings:seen.size,
+  return {candidates:chosen,diagnostics:{examined:records.length,unique_listings:latestById.size,
     selected_for_review:chosen.length,excluded:{...exclusions},
     bid_submissions:0,status:'read_only_candidate_review'}};
 }
