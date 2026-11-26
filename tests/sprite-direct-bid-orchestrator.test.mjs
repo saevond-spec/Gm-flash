@@ -203,3 +203,33 @@ test('numeric simulated public evidence prevents proposal work',async()=>{
   assert.equal(ctx.calls.proposals,0);
   assert.equal(ctx.calls.sends,0);
 });
+
+
+test('Blender task without independently verified production proof is held before proposal',async()=>{
+  const {ctx,result}=run({overrides:{
+    getAuthenticatedTask:async()=>task({title:'Blender scene in realistic bedroom',description:'Create full Blender scene'})
+  }});
+  assert.equal((await result).state,'blender_capability_unverified');
+  assert.equal(ctx.calls.proposals,0);assert.equal(ctx.calls.sends,0);
+});
+test('Blender proof error does not send',async()=>{
+  const {ctx,result}=run({overrides:{
+    getAuthenticatedTask:async()=>task({title:'Blender realistic scene',description:'Full 3D scene in Blender'}),
+    getVerifiedBlenderProof:async()=>{throw Error('isolated renderer unavailable')}
+  }});
+  assert.equal((await result).state,'blender_capability_unverified');
+  assert.equal(ctx.calls.sends,0);
+});
+test('self-reported human expertise without verification cannot bid',async()=>{
+  const {ctx,result}=run({overrides:{
+    getAuthenticatedTask:async()=>task({title:'Blender scene',description:'Human expert guides Blender scene'}),
+    getVerifiedBlenderProof:async()=>({expert_is_available:true})
+  }});
+  assert.equal((await result).state,'blender_capability_unverified');
+  assert.equal(ctx.calls.sends,0);
+});
+test('operator price ceiling is enforced after draft, before atomic send',async()=>{
+  const {ctx,result}=run({opts:{max_authorized_quote_cents:9000}});
+  assert.equal((await result).state,'operator_quote_ceiling_exceeded');
+  assert.equal(ctx.calls.sends,0);
+});
