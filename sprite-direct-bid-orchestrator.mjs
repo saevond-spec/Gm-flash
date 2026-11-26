@@ -47,7 +47,10 @@ export async function submitSpriteDirectOnce({problem_id,deps,nowMs=Date.now(),d
     return {state:'existing_bid_requires_reconciliation',attempted:false,confirmed:false,problem_id:id};
   const simulated=task.simulated===true||task.simulated===1||task.is_simulated===true||
      task.is_simulated===1||task.is_simulation===true||task.is_simulation===1||
-     publicEvidence?.simulated_bounty_banner===true||publicEvidence?.simulated===true;
+     publicEvidence?.simulated_bounty_banner===true||
+     publicEvidence?.simulated===true||publicEvidence?.simulated===1||
+     publicEvidence?.is_simulated===true||publicEvidence?.is_simulated===1||
+     String(task?.bounty_type??'').toLowerCase()==='simulated';
   if(simulated)return {state:'simulated_bounty_excluded',attempted:false,confirmed:false,problem_id:id};
   // Proposal preparation must run inside the separate, isolated per-task
   // public-brief reviewer and return only the frozen bid fields. NEVER pass
