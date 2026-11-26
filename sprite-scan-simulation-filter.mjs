@@ -40,12 +40,25 @@ export function filterSpriteScanCandidateIds({
   if (ids.length > 10000 || inventoryRows.length > 50000 ||
       publicFundingEvidence.length > 50000 || authenticatedDetails.length > 50000)
     throw new RangeError('oversized scan evidence');
-  const inventory = new Map(inventoryRows.map(x => [getId(x),x]).filter(x => x[0]));
+  const inventory = new Map(), details = new Map();
+  // Monotone safety: any explicit positive simulation evidence wins over
+  // duplicate later snapshots with missing/false flags, regardless of order.
+  const stickySimulated = new Set();
+  for (const x of inventoryRows) {
+    const id = getId(x); if(!id) continue;
+    inventory.set(id,x);
+    if(isKnownSimulated(x)) stickySimulated.add(id);
+  }
+  for (const x of authenticatedDetails) {
+    const id = getId(x); if(!id) continue;
+    details.set(id,x);
+    if(isKnownSimulated(x)) stickySimulated.add(id);
+  }
   const simulatedEvidence = new Set(publicFundingEvidence
     .filter(e => knownTrue(e?.observed_simulated) &&
       e?.evidence === 'public_page_explicit_no_real_funds')
     .map(getId).filter(Boolean));
-  const details = new Map(authenticatedDetails.map(x => [getId(x),x]).filter(x => x[0]));
+  for(const id of simulatedEvidence) stickySimulated.add(id);
   const seen = new Set(), candidates = [];
   const counts = {invalid:0,duplicate:0,excluded_known_simulated:0,needs_authenticity_verification:0,
     verified_funded:0,no_escrow_risk_not_confirmed_paid:0};
@@ -55,7 +68,7 @@ export function filterSpriteScanCandidateIds({
     if (seen.has(id)) { counts.duplicate++; continue; }
     seen.add(id);
     const inv = inventory.get(id),detail=details.get(id);
-    if (simulatedEvidence.has(id) || isKnownSimulated(inv) || isKnownSimulated(detail)) {
+    if (stickySimulated.has(id) || isKnownSimulated(record) || isKnownSimulated(inv) || isKnownSimulated(detail)) {
       counts.excluded_known_simulated++; continue;
     }
     const verified = actualFunding(detail);
