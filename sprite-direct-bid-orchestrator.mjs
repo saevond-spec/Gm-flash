@@ -17,7 +17,8 @@ const taskId=x=>{
 };
 const safe=x=>typeof x==='string'&&x.length<=128?x:null;
 
-export async function submitSpriteDirectOnce({problem_id,deps,nowMs=Date.now(),delegated=false}={}){
+export async function submitSpriteDirectOnce({problem_id,deps,nowMs=Date.now(),delegated=false,
+ max_authorized_quote_cents=null}={}){
   const id=taskId(problem_id);
   const required=['getSpriteIdentity','getAuthenticatedTask','getPublicAuthenticityEvidence',
     'getOwnBidHistory','createPublicOnlyProposal','reserveAndSendOnce','readAuthenticatedBidReceipt'];
@@ -59,6 +60,11 @@ export async function submitSpriteDirectOnce({problem_id,deps,nowMs=Date.now(),d
   let proposal;
   try {proposal=await deps.createPublicOnlyProposal({problem_id:id,access:'isolated_public_brief_only'});}
   catch {return {state:'public_proposal_unavailable',attempted:false,confirmed:false,problem_id:id};}
+  if(max_authorized_quote_cents!==null &&
+     (!Number.isSafeInteger(max_authorized_quote_cents)||
+       max_authorized_quote_cents<2000||max_authorized_quote_cents>100000||
+       proposal?.amount_cents>max_authorized_quote_cents))
+    return {state:'operator_quote_ceiling_exceeded',attempted:false,confirmed:false,problem_id:id};
   const decision=evaluateSpriteDirectPrebid({agent,task,proposal,existing,publicEvidence,nowMs,delegated});
   if(!decision.prebid_feasible)
     return {state:'prebid_evidence_incomplete',attempted:false,confirmed:false,
