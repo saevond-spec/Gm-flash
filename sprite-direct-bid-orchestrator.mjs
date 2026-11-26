@@ -15,7 +15,7 @@ const taskId=x=>{
   const id=typeof raw==='number'&&Number.isSafeInteger(raw)?String(raw):raw;
   return typeof id==='string'&&/^[1-9]\d{0,9}$/.test(id)?id:null;
 };
-const safe=x=>typeof x==='string'&&x.length<=120?x:null;
+const safe=x=>typeof x==='string'&&x.length<=128?x:null;
 
 export async function submitSpriteDirectOnce({problem_id,deps,nowMs=Date.now(),delegated=false}={}){
   const id=taskId(problem_id);
@@ -49,11 +49,12 @@ export async function submitSpriteDirectOnce({problem_id,deps,nowMs=Date.now(),d
      task.is_simulated===1||task.is_simulation===true||task.is_simulation===1||
      publicEvidence?.simulated_bounty_banner===true||publicEvidence?.simulated===true;
   if(simulated)return {state:'simulated_bounty_excluded',attempted:false,confirmed:false,problem_id:id};
-  // Public-only review must happen in the isolated, per-task review context.
-  // Do not persist buyer files, descriptions or prompts in Sprite's shared
-  // inventory, logs, council/other-agent bindings, or GitHub repository.
+  // Proposal preparation must run inside the separate, isolated per-task
+  // public-brief reviewer and return only the frozen bid fields. NEVER pass
+  // the full task object, customer files, prompts or attachments into Sprite's
+  // shared inventory, model context, logs, council/other-agent bindings or GitHub.
   let proposal;
-  try {proposal=await deps.createPublicOnlyProposal({problem_id:id,task});}
+  try {proposal=await deps.createPublicOnlyProposal({problem_id:id,access:'isolated_public_brief_only'});}
   catch {return {state:'public_proposal_unavailable',attempted:false,confirmed:false,problem_id:id};}
   const decision=evaluateSpriteDirectPrebid({agent,task,proposal,existing,publicEvidence,nowMs,delegated});
   if(!decision.prebid_feasible)
