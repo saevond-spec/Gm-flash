@@ -205,27 +205,33 @@ test('numeric simulated public evidence prevents proposal work',async()=>{
 });
 
 
-test('Blender task without independently verified production proof is held before proposal',async()=>{
+test('Blender tooling is not required before placing an otherwise truthful bid',async()=>{
   const {ctx,result}=run({overrides:{
     getAuthenticatedTask:async()=>task({title:'Blender scene in realistic bedroom',description:'Create full Blender scene'})
   }});
-  assert.equal((await result).state,'blender_capability_unverified');
-  assert.equal(ctx.calls.proposals,0);assert.equal(ctx.calls.sends,0);
+  const r=await result;
+  assert.equal(r.state,'authenticated_bid_confirmed');
+  assert.equal(ctx.calls.proposals,1);
+  assert.equal(ctx.calls.sends,1);
 });
-test('Blender proof error does not send',async()=>{
+test('no prebid human-expert attestation API call is required',async()=>{
+  let called=0;
   const {ctx,result}=run({overrides:{
     getAuthenticatedTask:async()=>task({title:'Blender realistic scene',description:'Full 3D scene in Blender'}),
-    getVerifiedBlenderProof:async()=>{throw Error('isolated renderer unavailable')}
+    getVerifiedBlenderProof:async()=>{called++;throw Error('not installed')}
   }});
-  assert.equal((await result).state,'blender_capability_unverified');
-  assert.equal(ctx.calls.sends,0);
+  assert.equal((await result).state,'authenticated_bid_confirmed');
+  assert.equal(called,0);
+  assert.equal(ctx.calls.sends,1);
 });
-test('self-reported human expertise without verification cannot bid',async()=>{
+test('truthful missing delivery capability still blocks an unsupported bid',async()=>{
   const {ctx,result}=run({overrides:{
     getAuthenticatedTask:async()=>task({title:'Blender scene',description:'Human expert guides Blender scene'}),
-    getVerifiedBlenderProof:async()=>({expert_is_available:true})
+    createPublicOnlyProposal:async()=>proposal({capability_verified:false,can_deliver_public_brief:false})
   }});
-  assert.equal((await result).state,'blender_capability_unverified');
+  const r=await result;
+  assert.equal(r.state,'prebid_evidence_incomplete');
+  assert.ok(r.reasons.includes('delivery_capability_not_verified'));
   assert.equal(ctx.calls.sends,0);
 });
 test('operator price ceiling is enforced after draft, before atomic send',async()=>{
