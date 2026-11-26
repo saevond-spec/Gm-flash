@@ -11,7 +11,8 @@
  */
 import {evaluateSpriteDirectPrebid} from './sprite-direct-prebid.mjs';
 const taskId=x=>{
-  const id=typeof x==='number'&&Number.isSafeInteger(x)?String(x):x;
+  const raw=(x&&typeof x==='object'&&!Array.isArray(x))?(x.problem_id??x.id):x;
+  const id=typeof raw==='number'&&Number.isSafeInteger(raw)?String(raw):raw;
   return typeof id==='string'&&/^[1-9]\d{0,9}$/.test(id)?id:null;
 };
 const safe=x=>typeof x==='string'&&x.length<=120?x:null;
