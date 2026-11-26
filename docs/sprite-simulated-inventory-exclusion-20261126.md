@@ -57,3 +57,28 @@ LIMIT ? OFFSET ?;
 - No paid services, bids or score assertions triggered by these changes.
 - This GitHub document is evidence for eventual integration. It does not itself change the currently deployed dashboard source.
 
+
+## Live scan leak identified and filtered (06:38 UTC)
+
+The current raw `scan_status.candidate_ids` JSON list had **7** candidate IDs, including known simulated task **#3268** (already `simulated=1`). Its continued appearance in the *scan output* is a production scanner bug, even though the dispatch and stage filters later block it. Do not rewrite the original scan history.
+
+A second, non-destructive production view is now available:
+
+```sql
+CREATE VIEW IF NOT EXISTS sprite_non_simulated_latest_scan_v1 AS
+SELECT CAST(j.value AS TEXT) problem_id,
+       s.observed_at scan_observed_at,
+       i.simulated,i.verification_state,i.escrow_status,i.category,i.budget_cents,
+       CASE WHEN i.simulated=0
+         THEN 'reported_not_simulated_requires_current_check'
+         ELSE 'unknown_requires_current_check' END authenticity_state
+FROM scan_status s
+JOIN json_each(CASE WHEN json_valid(s.candidate_ids)
+                    THEN s.candidate_ids ELSE '[]' END) j
+LEFT JOIN sprite_job_inventory_v1 i ON i.problem_id=CAST(j.value AS TEXT)
+WHERE s.id=1 AND COALESCE(i.simulated,0)<>1;
+```
+
+Verified readback after creation: **7 raw scan IDs -> 6 filtered IDs; zero simulated rows**. This view does not turn unknown-status jobs into verified paying jobs, nor does it modify the scan's underlying historical evidence.
+
+**Remaining UI/integration blocker:** The production `/api/problems?source=inventory` route selects directly from `sprite_job_inventory_v1`, so the UI still needs an authorized v179 source change to use `sprite_non_simulated_review_inventory_v1`. Likewise, the scan route must exclude known simulated IDs **before** writing `candidate_ids`, not merely in the downstream filtered view. Preserve its diagnostics, identity, receipts, duplicate reservations and customer isolation. Never deploy GitHub's stale default branch over live v179.
