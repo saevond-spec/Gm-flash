@@ -177,3 +177,20 @@ test('returned summary never includes customer-specific proposals',async()=>{
   assert.ok(!JSON.stringify(r).includes('CUSTOMER CONFIDENTIAL'));
   assert.ok(!JSON.stringify(r).includes('CLIENT CONFIDENTIAL'));
 });
+
+
+test('proposal helper never receives raw task details or customer attachments',async()=>{
+  let helperInput=null;
+  const {result}=run({overrides:{
+    getAuthenticatedTask:async()=>task({title:'CUSTOMER-PRIVATE-TITLE',private_file:'CUSTOMER-BINARY-FILE',
+      description:'FULL CLIENT DOCUMENT TEXT', attachments:['CUSTOMER-ID-42']}),
+    createPublicOnlyProposal:async x=>{helperInput=x;return proposal()}
+  }});
+  assert.equal((await result).confirmed,true);
+  const payload=JSON.stringify(helperInput);
+  assert.ok(!payload.includes('CUSTOMER-PRIVATE-TITLE'));
+  assert.ok(!payload.includes('CUSTOMER-BINARY-FILE'));
+  assert.ok(!payload.includes('FULL CLIENT DOCUMENT TEXT'));
+  assert.ok(!payload.includes('CUSTOMER-ID-42'));
+  assert.equal(helperInput.access,'isolated_public_brief_only');
+});
