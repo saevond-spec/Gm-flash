@@ -37,6 +37,10 @@ export async function submitSpriteDirectOnce({problem_id,deps,nowMs=Date.now(),d
     Number(agent?.id??agent?.agent_id)!==1878||agent?.authenticated!==true||
     agent?.admission_status!=='approved'||agent?.webhook_matches_approved_sprite!==true)
     return {state:'identity_or_listing_unverified',attempted:false,confirmed:false,problem_id:id};
+  if(existing?.authoritative!==true)
+    return {state:'own_bid_history_unverified',attempted:false,confirmed:false,problem_id:id};
+  if(task?.public_only_brief_verified!==true)
+    return {state:'public_brief_isolation_unverified',attempted:false,confirmed:false,problem_id:id};
   if(existing?.reservation===true||existing?.receipt===true||
      existing?.own_marketplace_bid===true||existing?.uncertain===true)
     return {state:'existing_bid_requires_reconciliation',attempted:false,confirmed:false,problem_id:id};
@@ -44,7 +48,9 @@ export async function submitSpriteDirectOnce({problem_id,deps,nowMs=Date.now(),d
      task.is_simulated===1||task.is_simulation===true||task.is_simulation===1||
      publicEvidence?.simulated_bounty_banner===true||publicEvidence?.simulated===true;
   if(simulated)return {state:'simulated_bounty_excluded',attempted:false,confirmed:false,problem_id:id};
-  // Caller must enforce task facts are public-only before passing to proposal generator.
+  // Public-only review must happen in the isolated, per-task review context.
+  // Do not persist buyer files, descriptions or prompts in Sprite's shared
+  // inventory, logs, council/other-agent bindings, or GitHub repository.
   let proposal;
   try {proposal=await deps.createPublicOnlyProposal({problem_id:id,task});}
   catch {return {state:'public_proposal_unavailable',attempted:false,confirmed:false,problem_id:id};}
