@@ -1,18 +1,31 @@
 
 /** Sprite #1878 public-only, user-scoped list. No customer files or secrets. */
 export const BATCH_TASKS=Object.freeze({
-"2573":["S1-PROTO-037","prototype"],"2720":["S1-BP-012","swimlane"],
-"3150":["S1-PROTO-018","prototype"],"3211":["S1-PROTO-032","prototype"],
-"3159":["S1-PROTO-020","prototype"],"3244":["S1-PROTO-040","prototype"],
-"2513":["S1-PROTO-017","prototype"],"2580":["S1-PROTO-039","prototype"],
-"2767":["S1-BP-022","metrics"],"2776":["S1-BP-024","metrics"],
-"3314":["S1-RULE-010","rules"],"2652":["S1-RULE-005","rules"],
-"2656":["S1-RULE-009","rules"],"2700":["S1-BP-008","swimlane"],
-"2730":["S1-BP-014","swimlane"],"3294":["S1-RES-020","research"],
-"2641":["S1-RES-019","research"],"2628":["S1-RES-015","research"],
-"2604":["S1-RES-007","research"],"2610":["S1-RES-009","research"]
+"3287":["S2-WB-001","frontend"],"3288":["S2-TAX-025","backend"],
+"3289":["S2-WB-002","frontend"],"3291":["S2-WB-004","frontend"],
+"3293":["S2-WB-005","frontend"],"3295":["S2-WB-007","frontend"],
+"3296":["S2-WB-008","frontend"],"3297":["S2-WB-006","frontend"],
+"3299":["S2-WB-010","frontend"],"3300":["S2-WB-009","frontend"],
+"3301":["S2-WB-011","frontend"],"3303":["S2-WB-013","frontend"],
+"3304":["S2-WB-012","frontend"],"3305":["S2-WB-014","frontend"],
+"3307":["S2-WB-016","frontend"],"3308":["S2-WB-015","frontend"],
+"3309":["S2-WB-017","frontend"],"3311":["S2-WB-019","frontend"],
+"3312":["S2-WB-018","frontend"],"3313":["S2-WB-020","devops"]
 });
 const PROFILES=Object.freeze({
+frontend:{
+method:"Implement the named feature using Vite, React, TypeScript and TDesign with typed components, appropriate permission/role checks, responsive states, API adapter stubs and focused Vitest/Playwright cases. Follow the existing project conventions without copying customer data, and derive exact tests from each acceptance criterion.",
+deliverables:"React/TypeScript source files and module integration instructions; typed components, fictional fixtures, unit/integration tests, screenshots and reproducible README as requested by the ticket.",
+proof:"Validate all ticket-specific UI behaviors, permission boundaries, loading/error states, i18n and navigation where relevant; supply real test output and actual screenshots only after running them in an isolated task environment."},
+backend:{
+method:"Build the named dictionary API and page integration contract using FastAPI/SQLAlchemy and typed frontend client stubs, with fictional fixtures, explicit status/error handling and deterministic API/integration tests. Use mocks for unprovided dependencies.",
+deliverables:"Backend API code, typed request/response contracts, frontend integration adapter, isolated fictional test fixtures, pytest/Vitest integration cases and README.",
+proof:"Test API status and schema constraints, dictionary filtering, invalid inputs and page integration against all buyer acceptance items; provide logs from real execution, not invented assertions."},
+devops:{
+method:"Prepare a reproducible multi-stage Docker build, minimal Nginx static server, whitelisted runtime configuration injection, secure HTTP headers and a bounded CI pipeline. Use fictional environment variables only and verify image size, curl output, bundle budget and non-whitelisted variable exclusion.",
+deliverables:"Dockerfile, Nginx configuration, runtime config injection script, CI workflow, size and security verification scripts, command transcripts and README.",
+proof:"Execute docker build, inspect real image size, verify whitelisted config.js values with multiple APP_API_BASE values, check required security headers and JS bundle size; hold final acceptance evidence until the isolated runner performs these tests."},
+
 prototype:{
 method:"Build self-contained static HTML/CSS/JS prototypes with fictional data, explicitly modeled interaction states, error/loading/empty screens, role restrictions and responsive artboards. Map every buyer screenshot requirement to an interactive state.",
 deliverables:"Self-contained static HTML/CSS/JS project and source zip, required design artboards/screenshots, Markdown interaction specification and verification walkthrough.",
@@ -61,7 +74,7 @@ const proposal_text=[
 ].join("\n\n");
 const scope_details={
 deliverables:profile.deliverables,
-format:target[1]==="prototype"?"Static HTML source zip, PNG screenshots, Markdown":"Editable source documents and Markdown/CSV/XLSX/PDF/PNG according to task acceptance",
+format:target[1]==="frontend"?"React/TypeScript code, tests, screenshots and README":target[1]==="backend"?"API source, typed contract, fictional fixtures, tests and README":target[1]==="devops"?"Docker/Nginx/CI source files, verification scripts and real command logs":target[1]==="prototype"?"Static HTML source zip, PNG screenshots, Markdown":"Editable source documents and Markdown/CSV/XLSX/PDF/PNG according to task acceptance",
 exclusions:"No buyer production access, real client personal data, unlicensed materials, fabricated evidence, additional paid tooling or customer-specific deliverables beyond the public brief without a separately agreed scope.",
 materials:"Public task detail, fictional examples and licensed public sources. Buyer-private assets or credentials are not yet available.",
 timeline,evidence:profile.proof,revisions:2};
