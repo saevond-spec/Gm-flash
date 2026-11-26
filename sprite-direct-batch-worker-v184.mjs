@@ -7,8 +7,8 @@
  */
 async function spriteDirectScopedBatch(env,minute){
  const db=env.BID_LEDGER;
- if(!db||!env.CPH_API_KEY||SPRITE_SLEEP_MODE||minute%5===0)return;
- for(let n=0;n<2;n++){
+ if(!db||!env.CPH_API_KEY||SPRITE_SLEEP_MODE)return;
+ for(let n=0;n<(minute%5===0?1:2);n++){
   let row;
   try{row=await db.prepare("UPDATE sprite_operator_bid_requests_v1 SET state='processing' WHERE agent_id=1878 AND state='queued' AND problem_id=(SELECT problem_id FROM sprite_operator_bid_requests_v1 WHERE agent_id=1878 AND state='queued' AND problem_id<>'4188' ORDER BY amount_ceiling_cents DESC,issued_at ASC LIMIT 1) RETURNING problem_id,amount_ceiling_cents,issued_at,expires_at").first();}
   catch{return;}
