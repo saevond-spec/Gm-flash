@@ -14,11 +14,13 @@ const taskId=x=>{
   const result=typeof v==='number'&&Number.isSafeInteger(v)?String(v):typeof v==='string'?v:'';
   return ID.test(result)?result:null;
 };
-const apparentSimulation=t=>t?.is_simulated===true||t?.simulated===true||
-  t?.is_simulation===true||normalized(t?.bounty_type)==='simulated'||
+const yes=x=>x===true||x===1;
+const no=x=>x===false||x===0;
+const apparentSimulation=t=>yes(t?.is_simulated)||yes(t?.simulated)||
+  yes(t?.is_simulation)||normalized(t?.bounty_type)==='simulated'||
   t?.review_mode==='simulation' || t?.review_mode==='simulated';
-const explicitReal=t=>t?.is_simulated===false||t?.simulated===false||
-  t?.is_simulation===false;
+const explicitReal=t=>no(t?.is_simulated)||no(t?.simulated)||
+  no(t?.is_simulation);
 const stamped=x=>{
   const ms=Date.parse(typeof x==='string'?x:'');
   return Number.isFinite(ms)?ms:null;
