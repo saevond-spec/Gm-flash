@@ -10,6 +10,7 @@
  * Detailed scope and customer-specific sandbox remain post-award only.
  */
 import {evaluateSpriteDirectPrebid} from './sprite-direct-prebid.mjs';
+import {verifySpriteBlenderReadiness} from './sprite-blender-readiness.mjs';
 const taskId=x=>{
   const raw=(x&&typeof x==='object'&&!Array.isArray(x))?(x.problem_id??x.id):x;
   const id=typeof raw==='number'&&Number.isSafeInteger(raw)?String(raw):raw;
@@ -53,6 +54,21 @@ export async function submitSpriteDirectOnce({problem_id,deps,nowMs=Date.now(),d
      publicEvidence?.is_simulated===true||publicEvidence?.is_simulated===1||
      String(task?.bounty_type??'').toLowerCase()==='simulated';
   if(simulated)return {state:'simulated_bounty_excluded',attempted:false,confirmed:false,problem_id:id};
+  // Hard technical delivery requirements cannot be bypassed merely by
+  // removing old advisory council / readiness-table approvals.
+  // Pass ONLY task ID to the isolated runner; never private job documents.
+  const publicBrief=String(task?.title??'')+' '+String(task?.description??'');
+  const needsBlender=/blender|三维建模|3d.{0,12}scene/i.test(publicBrief)&&
+    /scene|场景|建模|model/i.test(publicBrief);
+  if(needsBlender){
+    if(typeof deps.getVerifiedBlenderProof!=='function')
+      return {state:'blender_capability_unverified',attempted:false,confirmed:false,problem_id:id};
+    let proof;
+    try{proof=await deps.getVerifiedBlenderProof({problem_id:id,access:'isolated_capability_metadata_only'});}
+    catch{return {state:'blender_capability_unverified',attempted:false,confirmed:false,problem_id:id};}
+    if(!verifySpriteBlenderReadiness(proof,{nowMs}).ready)
+      return {state:'blender_capability_unverified',attempted:false,confirmed:false,problem_id:id};
+  }
   // Proposal preparation must run inside the separate, isolated per-task
   // public-brief reviewer and return only the frozen bid fields. NEVER pass
   // the full task object, customer files, prompts or attachments into Sprite's
