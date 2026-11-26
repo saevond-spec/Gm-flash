@@ -119,3 +119,39 @@ test('documented source-independent selection result has no details or buyer tex
   assert.ok(!JSON.stringify(x).includes('PRIVATE-SCOPE'));
   assert.ok(!JSON.stringify(x).includes('PRIVATE-BUYER-DATA'));
 });
+
+
+test('prior Sprite reservations are excluded from the active scan',()=>{
+  const x=filter({ids:['1','2','3'],reservationIds:['1']});
+  assert.deepEqual(x.candidate_ids,['2','3']);
+  assert.equal(x.diagnostics.excluded_prior_bid_or_reservation,1);
+});
+test('historical receipts cannot be accidentally bid again',()=>{
+  const x=filter({ids:['1','2'],receiptIds:['2']});
+  assert.deepEqual(x.candidate_ids,['1']);
+});
+test('own marketplace bid presence excluded even if no local receipt',()=>{
+  const x=filter({ids:['1','2'],ownBidPresenceIds:['1']});
+  assert.deepEqual(x.candidate_ids,['2']);
+});
+test('different duplicate signal sources count only once',()=>{
+  const x=filter({ids:['1'],reservationIds:['1'],receiptIds:['1'],ownBidPresenceIds:['1']});
+  assert.equal(x.diagnostics.excluded_prior_bid_or_reservation,1);
+});
+test('a known simulated bid stays classified simulated even if already reserved',()=>{
+  const x=filter({ids:['1'],inventoryRows:[{...entry(1),simulated:1}],reservationIds:['1']});
+  assert.equal(x.diagnostics.excluded_known_simulated,1);
+  assert.equal(x.diagnostics.excluded_prior_bid_or_reservation,0);
+});
+test('invalid id arrays are rejected',()=>{
+  assert.throws(()=>filter({ids:['1'],reservationIds:{bad:true}}),TypeError);
+});
+test('receipts may include structured problem identifiers',()=>{
+  const x=filter({ids:['1','2'],receiptIds:[{problem_id:'2'}]});
+  assert.deepEqual(x.candidate_ids,['1']);
+});
+test('simulated and prior bid exclusions do not certify unknowns as paid',()=>{
+  const x=filter({ids:['1','2','3'],inventoryRows:[{...entry(1),simulated:1}],reservationIds:['2']});
+  assert.deepEqual(x.candidate_ids,['3']);
+  assert.equal(x.verified_paying_candidate_count,0);
+});
