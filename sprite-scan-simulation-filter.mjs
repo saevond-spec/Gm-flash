@@ -32,13 +32,17 @@ const actualFunding = t => Boolean(t?.authenticated === true &&
 
 export function filterSpriteScanCandidateIds({
   ids = [], inventoryRows = [], publicFundingEvidence = [],
-  authenticatedDetails = []
+  authenticatedDetails = [], reservationIds = [], receiptIds = [],
+  ownBidPresenceIds = []
 } = {}) {
   if (!Array.isArray(ids) || !Array.isArray(inventoryRows) ||
-      !Array.isArray(publicFundingEvidence) || !Array.isArray(authenticatedDetails))
+      !Array.isArray(publicFundingEvidence) || !Array.isArray(authenticatedDetails) ||
+      !Array.isArray(reservationIds) || !Array.isArray(receiptIds) ||
+      !Array.isArray(ownBidPresenceIds))
     throw new TypeError('arrays required');
   if (ids.length > 10000 || inventoryRows.length > 50000 ||
-      publicFundingEvidence.length > 50000 || authenticatedDetails.length > 50000)
+      publicFundingEvidence.length > 50000 || authenticatedDetails.length > 50000 ||
+      reservationIds.length > 50000 || receiptIds.length > 50000 || ownBidPresenceIds.length > 50000)
     throw new RangeError('oversized scan evidence');
   const inventory = new Map(), details = new Map();
   // Monotone safety: any explicit positive simulation evidence wins over
@@ -59,8 +63,11 @@ export function filterSpriteScanCandidateIds({
       e?.evidence === 'public_page_explicit_no_real_funds')
     .map(getId).filter(Boolean));
   for(const id of simulatedEvidence) stickySimulated.add(id);
+  const priorBids=new Set([...reservationIds,...receiptIds,...ownBidPresenceIds]
+    .map(getId).filter(Boolean));
   const seen = new Set(), candidates = [];
-  const counts = {invalid:0,duplicate:0,excluded_known_simulated:0,needs_authenticity_verification:0,
+  const counts = {invalid:0,duplicate:0,excluded_known_simulated:0,
+    excluded_prior_bid_or_reservation:0,needs_authenticity_verification:0,
     verified_funded:0,no_escrow_risk_not_confirmed_paid:0};
   for (const record of ids) {
     const id = getId(record);
@@ -71,6 +78,7 @@ export function filterSpriteScanCandidateIds({
     if (stickySimulated.has(id) || isKnownSimulated(record) || isKnownSimulated(inv) || isKnownSimulated(detail)) {
       counts.excluded_known_simulated++; continue;
     }
+    if(priorBids.has(id)) { counts.excluded_prior_bid_or_reservation++; continue; }
     const verified = actualFunding(detail);
     const funding_evidence_state=verified?'authenticated_current_hold':
       ['none','unfunded'].includes(detail?.escrow_status)?'no_escrow_not_guaranteed':
