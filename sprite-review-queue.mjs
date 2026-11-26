@@ -107,7 +107,7 @@ export function selectPublicReviewCandidates(records,options={}){
 export function assessBidStageEvidence(evidence){
   if(!evidence||typeof evidence!=='object'||Array.isArray(evidence))
     return {ready:false,missing:['task_evidence'],delivery_workspace_required_after_award:true};
-  const required=['approved_sprite_identity','fresh_task_identity','open_non_simulated_task',
+  const required=['approved_sprite_identity','fresh_task_identity','authenticated_marketplace_authenticity_verified',
     'public_scope_feasibility_screen','demonstrated_delivery_capability',
     'zero_additional_spend_plan','verified_price_and_deadline','accurate_complete_proposal',
     'clear_duplicate_and_uncertain_status','authorized_bid_submission'];
