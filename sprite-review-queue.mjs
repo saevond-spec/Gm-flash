@@ -108,10 +108,13 @@ export function assessBidStageEvidence(evidence){
   if(!evidence||typeof evidence!=='object'||Array.isArray(evidence))
     return {ready:false,missing:['task_evidence'],delivery_workspace_required_after_award:true};
   const required=['approved_sprite_identity','fresh_task_identity','open_non_simulated_task',
-    'independently_verified_public_scope','demonstrated_delivery_capability',
+    'public_scope_feasibility_screen','demonstrated_delivery_capability',
     'zero_additional_spend_plan','verified_price_and_deadline','accurate_complete_proposal',
     'clear_duplicate_and_uncertain_status','authorized_bid_submission'];
   const missing=required.filter(x=>evidence[x]!==true);
-  return {ready:missing.length===0,missing,delivery_workspace_required_after_award:true,
+  return {ready:missing.length===0,missing,scope_review_stage:'post_award',
+    detailed_scope_review_required_before_delivery:true,
+    delivery_workspace_required_after_award:true,
+    can_begin_customer_delivery:false,
     workspace_attestation_is_prebid_requirement:false};
 }
